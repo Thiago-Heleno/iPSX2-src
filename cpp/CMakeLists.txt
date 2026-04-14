@@ -63,7 +63,7 @@ endif()
 set(TOP_CMAKE_WAS_SOURCED TRUE)
 
 # set module path
-set(CMAKE_MODULE_PATH ${CMAKE_SOURCE_DIR}/../../cmake)
+set(CMAKE_MODULE_PATH ${CMAKE_SOURCE_DIR}/../cmake)
 
 # Write binaries to the bin directory under the build directory.
 # This makes it simple to run development builds directly out of the build directory.
