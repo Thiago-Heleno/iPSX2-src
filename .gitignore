@@ -1,0 +1,91 @@
+# ── Build outputs ──────────────────────────────────────────────
+build/
+build-*/
+*.xcodeproj/
+*.xcworkspace/
+DerivedData/
+*.ipa
+*.dSYM/
+*.o
+*.a
+*.dylib
+*.so
+
+# ── CMake ──────────────────────────────────────────────────────
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+_deps/
+
+# ── Xcode ──────────────────────────────────────────────────────
+*.pbxuser
+*.mode1v3
+*.mode2v3
+*.perspectivev3
+!default.pbxuser
+!default.mode1v3
+!default.mode2v3
+!default.perspectivev3
+xcuserdata/
+*.moved-aside
+*.hmap
+*.ipa
+*.xcuserstate
+
+# ── macOS / Windows junk ───────────────────────────────────────
+.DS_Store
+.DS_Store?
+._*
+Thumbs.db
+desktop.ini
+
+# ── 3rdparty vendored libraries ───────────────────────────────
+# These are large upstream sources that bloat the repo.
+# Clone them as submodules or download via CMake FetchContent.
+cpp/3rdparty/SDL3/
+cpp/3rdparty/fmt/
+cpp/3rdparty/fast_float/
+cpp/3rdparty/vixl/
+cpp/3rdparty/vulkan/
+cpp/3rdparty/glslang/
+cpp/3rdparty/simpleini/
+cpp/3rdparty/imgui/
+cpp/3rdparty/rapidyaml/
+cpp/3rdparty/cpuinfo/
+cpp/3rdparty/libchdr/
+cpp/3rdparty/libzip/
+cpp/3rdparty/cubeb/
+cpp/3rdparty/rcheevos/
+cpp/3rdparty/freesurround/
+cpp/3rdparty/freetype/
+cpp/3rdparty/plutosvg1/
+cpp/3rdparty/soundtouch/
+cpp/3rdparty/lz4/
+cpp/3rdparty/lzma/
+cpp/3rdparty/zstd/
+cpp/3rdparty/demangler/
+cpp/3rdparty/ccc/
+
+# Keep the top-level 3rdparty include stubs if any
+!cpp/3rdparty/include/
+
+# ── Game data / BIOS (never commit) ───────────────────────────
+*.iso
+*.bin
+*.img
+*.chd
+*.rom
+*.BIN
+bios/
+games/
+
+# ── IDE / editor ──────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ── Antigravity / AI tooling ──────────────────────────────────
+.gemini/

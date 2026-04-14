@@ -1,0 +1,138 @@
+name: Build IPA
+
+on:
+  push:
+    branches: [main, master]
+    tags: ["v*"]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  XCODE_VERSION: "16.2"
+  DEPLOYMENT_TARGET: "18.0"
+  BUNDLE_ID: "com.otti83.iPSX2"
+
+jobs:
+  build:
+    name: Build IPA (unsigned)
+    runs-on: macos-15
+
+    steps:
+      # ── 1. Checkout ──────────────────────────────────────────────────────────
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      # ── 2. Toolchain ─────────────────────────────────────────────────────────
+      - name: Select Xcode ${{ env.XCODE_VERSION }}
+        run: sudo xcode-select -s /Applications/Xcode_${{ env.XCODE_VERSION }}.app/Contents/Developer
+
+      - name: Show build environment
+        run: |
+          xcodebuild -version
+          cmake --version
+          sw_vers
+
+      # ── 3. Cache CMake build dir ─────────────────────────────────────────────
+      - name: Cache CMake build
+        uses: actions/cache@v4
+        with:
+          path: build
+          key: cmake-ios-${{ runner.os }}-${{ hashFiles('cpp/CMakeLists.txt', 'cpp/pcsx2/CMakeLists.txt', 'cpp/common/CMakeLists.txt') }}
+          restore-keys: |
+            cmake-ios-${{ runner.os }}-
+
+      # ── 4. Configure ─────────────────────────────────────────────────────────
+      - name: Configure (CMake → Xcode)
+        run: |
+          cmake -B build \
+            -G Xcode \
+            -S cpp \
+            -DCMAKE_SYSTEM_NAME=iOS \
+            -DCMAKE_OSX_ARCHITECTURES=arm64 \
+            -DiPSX2_REAL_DEVICE=ON \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_REQUIRED=NO \
+            -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_ALLOWED=NO \
+            -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGN_IDENTITY="" \
+            -DCMAKE_XCODE_ATTRIBUTE_DEVELOPMENT_TEAM="" \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=${{ env.DEPLOYMENT_TARGET }}
+
+      # ── 5. Build .app ─────────────────────────────────────────────────────────
+      - name: Build .app
+        run: |
+          cmake --build build \
+            --config Release \
+            --target iPSX2 \
+            -- \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGN_IDENTITY="" \
+            DEVELOPMENT_TEAM="" \
+            -allowProvisioningUpdates
+
+      # ── 6. Package → .ipa ────────────────────────────────────────────────────
+      - name: Package IPA
+        run: |
+          APP_PATH=$(find build -name "iPSX2.app" -maxdepth 6 | head -1)
+          echo "Found app: $APP_PATH"
+
+          # Build a minimal Payload/ structure expected by iOS sideloaders
+          mkdir -p ipa_staging/Payload
+          cp -R "$APP_PATH" ipa_staging/Payload/iPSX2.app
+
+          # Strip code signature artifacts so Sideloadly / AltStore can re-sign cleanly
+          find ipa_staging/Payload/iPSX2.app -name "_CodeSignature" -type d | xargs rm -rf
+          find ipa_staging/Payload/iPSX2.app -name "embedded.mobileprovision" -delete
+
+          # Compute version tag for file name
+          VERSION=$(grep "IPSX2_VERSION " cpp/CMakeLists.txt | head -1 | grep -o '[0-9]\+\.[0-9]\+\.[0-9]\+')
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          IPA_NAME="iPSX2-${VERSION}-${SHORT_SHA}.ipa"
+
+          cd ipa_staging
+          zip -r "../$IPA_NAME" Payload
+          cd ..
+
+          echo "IPA_NAME=$IPA_NAME" >> $GITHUB_ENV
+          echo "Built: $IPA_NAME ($(du -sh $IPA_NAME | cut -f1))"
+
+      # ── 7. Upload artifact ────────────────────────────────────────────────────
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.IPA_NAME }}
+          path: ${{ env.IPA_NAME }}
+          retention-days: 30
+
+      # ── 8. Create GitHub Release on tag push ──────────────────────────────────
+      - name: Create Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ env.IPA_NAME }}
+          generate_release_notes: true
+          body: |
+            ## iPSX2 ${{ github.ref_name }}
+
+            ### Installation
+            > **No Apple Developer account required.** Use [Sideloadly](https://sideloadly.io/),
+            > [AltStore](https://altstore.io/), or [TrollStore](https://github.com/opa334/TrollStore)
+            > to install on your device.
+
+            1. Download the `.ipa` below
+            2. Sideload with your preferred tool
+            3. Copy a PS2 BIOS to `Files → iPSX2 → bios/` on your device
+            4. Copy game ISOs / CHDs to `Files → iPSX2 → games/`
+
+            ### What's in this build
+            - Unsigned IPA, compatible with all sideloading tools
+            - VU Extra clamping enabled (fixes invisible player in R&C and similar games)
+            - XgKick + VuAddSub gamefixes enabled by default
