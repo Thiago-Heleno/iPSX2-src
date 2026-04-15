@@ -23,6 +23,38 @@ macro(add_pcsx2_executable NAME)
     add_executable(${NAME} ${ARGN})
 endmacro()
 
+# ── force_include_last ────────────────────────────────────────────────────────
+# On desktop builds this reorders /usr/local/include to avoid shadowing vendored
+# headers. On iOS the SDK is hermetic — no /usr/local — so this is a no-op.
+macro(force_include_last TARGET_NAME REGEX)
+    # No-op on iOS: the Xcode SDK has no /usr/local/include to reorder.
+endmacro()
+
+# ── source_groups_from_vcxproj_filters ────────────────────────────────────────
+# Reads a Visual Studio .vcxproj.filters XML file and calls source_group() so
+# IDEs (Xcode, CLion) show the same folder tree as VS. Skips silently if the
+# file is absent (CI / non-Windows builds).
+function(source_groups_from_vcxproj_filters FILTERS_FILE)
+    set(_full_path "${CMAKE_CURRENT_SOURCE_DIR}/${FILTERS_FILE}")
+    if(NOT EXISTS "${_full_path}")
+        return()
+    endif()
+    file(READ "${_full_path}" _content)
+    # Match every <ClCompile Include="..."> / <ClInclude Include="..."> block
+    string(REGEX MATCHALL
+        "<(ClCompile|ClInclude|None|Image)[^>]*Include=\"([^\"]+)\"[^/]*/[^>]*>|<(ClCompile|ClInclude|None|Image)[^>]*Include=\"([^\"]+)\"[^>]*>[^<]*<Filter>([^<]+)</Filter>"
+        _matches "${_content}")
+    foreach(_m IN LISTS _matches)
+        if(_m MATCHES "Include=\"([^\"]+)\"[^<]*<Filter>([^<]+)</Filter")
+            set(_file   "${CMAKE_MATCH_1}")
+            set(_filter "${CMAKE_MATCH_2}")
+            string(REPLACE "\\" "/" _file   "${_file}")
+            string(REPLACE "\\" "/" _filter "${_filter}")
+            source_group("${_filter}" FILES "${CMAKE_CURRENT_SOURCE_DIR}/${_file}")
+        endif()
+    endforeach()
+endfunction()
+
 # Guard: abort if invoked outside the top-level CMakeLists
 macro(check_no_parenthesis_in_path)
     if("${CMAKE_BINARY_DIR}" MATCHES ".*[(].*" OR "${CMAKE_SOURCE_DIR}" MATCHES ".*[(].*")
