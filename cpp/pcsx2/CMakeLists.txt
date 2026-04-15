@@ -26,6 +26,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
 	set(_M_ARM64 TRUE)
 	target_compile_definitions(PCSX2_FLAGS INTERFACE
 		"_M_ARM64=1"
+		"PCSX2_NO_PCAP=1"
 	)
 endif()
 

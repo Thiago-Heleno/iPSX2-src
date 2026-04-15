@@ -2,7 +2,9 @@
 // SPDX-License-Identifier: GPL-3.0+
 
 #pragma once
+#ifndef PCSX2_NO_PCAP
 #include "pcap.h"
+#endif
 #include "net.h"
 #include "PacketReader/MAC_Address.h"
 
