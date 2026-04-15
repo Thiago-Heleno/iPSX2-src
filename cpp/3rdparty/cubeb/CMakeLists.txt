@@ -125,17 +125,41 @@ if(USE_SNDIO)
   target_compile_definitions(cubeb PRIVATE USE_SNDIO)
 endif()
 
+# Apple mobile builds are not guaranteed to define IOS or CMAKE_SYSTEM_NAME=iOS
+# (for example when driven by CMAKE_OSX_SYSROOT). Detect them explicitly.
+set(CUBEB_APPLE_MOBILE FALSE)
+if(APPLE)
+  if((DEFINED IOS AND IOS) OR
+     CMAKE_SYSTEM_NAME MATCHES "^(iOS|tvOS|watchOS|visionOS)$" OR
+     CMAKE_OSX_SYSROOT MATCHES "(iphoneos|iphonesimulator|appletvos|appletvsimulator|watchos|watchsimulator|xros|xrsimulator)")
+    set(CUBEB_APPLE_MOBILE TRUE)
+  endif()
+endif()
+
 if(APPLE)
 check_include_files(AudioUnit/AudioUnit.h USE_AUDIOUNIT)
+if(CUBEB_APPLE_MOBILE)
+  set(USE_AUDIOUNIT OFF)
+  message(STATUS "cubeb: Apple mobile target detected, disabling macOS AudioUnit HAL backend")
+endif()
 if(USE_AUDIOUNIT)
   target_sources(cubeb PRIVATE
-    src/cubeb_audiounit.cpp)
-  if(NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
-    target_sources(cubeb PRIVATE src/cubeb_osx_run_loop.cpp)
-  endif()
+    src/cubeb_audiounit.cpp
+    src/cubeb_osx_run_loop.cpp)
   target_compile_definitions(cubeb PRIVATE USE_AUDIOUNIT)
   target_link_libraries(cubeb PRIVATE "-framework AudioUnit" "-framework CoreAudio" "-framework CoreServices")
 endif()
+endif()
+
+if(CUBEB_APPLE_MOBILE)
+  get_target_property(CUBEB_TARGET_SOURCES cubeb SOURCES)
+  foreach(CUBEB_FORBIDDEN_SOURCE src/cubeb_audiounit.cpp src/cubeb_osx_run_loop.cpp)
+    list(FIND CUBEB_TARGET_SOURCES "${CUBEB_FORBIDDEN_SOURCE}" CUBEB_FORBIDDEN_REL_INDEX)
+    list(FIND CUBEB_TARGET_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/${CUBEB_FORBIDDEN_SOURCE}" CUBEB_FORBIDDEN_ABS_INDEX)
+    if(NOT CUBEB_FORBIDDEN_REL_INDEX EQUAL -1 OR NOT CUBEB_FORBIDDEN_ABS_INDEX EQUAL -1)
+      message(FATAL_ERROR "cubeb: '${CUBEB_FORBIDDEN_SOURCE}' is a macOS-only backend source and must not be compiled for Apple mobile targets")
+    endif()
+  endforeach()
 endif()
 
 if(WIN32)
