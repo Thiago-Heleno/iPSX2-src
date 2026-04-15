@@ -58,6 +58,17 @@ if(NOT TARGET fmt::fmt)
     message(FATAL_ERROR "fmt target not found. Provide cpp/3rdparty/fmt or install a CMake package exposing fmt::fmt.")
 endif()
 
+# ── rapidyaml (vendored inside cpp/3rdparty/rapidyaml) ────────────────────────
+if(NOT TARGET rapidyaml::rapidyaml)
+    ipsx2_add_vendored_subdirectory("3rdparty/rapidyaml" "3rdparty/rapidyaml")
+endif()
+if(NOT TARGET rapidyaml::rapidyaml)
+    find_package(rapidyaml QUIET CONFIG)
+endif()
+if(NOT TARGET rapidyaml::rapidyaml)
+    message(FATAL_ERROR "rapidyaml target not found. Provide cpp/3rdparty/rapidyaml or install a CMake package exposing rapidyaml::rapidyaml.")
+endif()
+
 # ── WebP (vendored inside cpp/3rdparty/libwebp) ────────────────────────────────
 if(NOT TARGET WebP::libwebp)
     # We only need the core library in this project.
