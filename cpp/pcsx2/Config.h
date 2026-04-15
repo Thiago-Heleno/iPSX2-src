@@ -13,6 +13,10 @@
 #include <optional>
 #include <vector>
 
+#ifdef __APPLE__
+#include <TargetConditionals.h>
+#endif
+
 // Macro used for removing some of the redtape involved in defining bitfield/union helpers.
 //
 #define BITFIELD32() \
@@ -896,7 +900,7 @@ struct Pcsx2Config
 
 		static constexpr s32 MAX_VOLUME = 200;
 		// [P14] iOS では Oboe スタブ / Cubeb は cubeb_init fail。SDL3 がbehaviorする。
-#if TARGET_OS_IPHONE || TARGET_IPHONE_SIMULATOR
+#if (defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE) || (defined(TARGET_IPHONE_SIMULATOR) && TARGET_IPHONE_SIMULATOR)
 		static constexpr AudioBackend DEFAULT_BACKEND = AudioBackend::SDL;
 #else
 		static constexpr AudioBackend DEFAULT_BACKEND = AudioBackend::Oboe;

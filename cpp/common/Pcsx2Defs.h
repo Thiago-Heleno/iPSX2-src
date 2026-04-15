@@ -8,6 +8,15 @@
 #include <bit>
 #include <cstddef>
 
+#ifdef __APPLE__
+#include <TargetConditionals.h>
+#endif
+
+// Some subsystems key off __POSIX__. Ensure Apple/Unix non-Windows targets define it.
+#if !defined(_WIN32) && !defined(__POSIX__)
+#define __POSIX__ 1
+#endif
+
 // --------------------------------------------------------------------------------------
 // Dev / Debug conditionals - Consts for using if() statements instead of uglier #ifdef.
 // --------------------------------------------------------------------------------------

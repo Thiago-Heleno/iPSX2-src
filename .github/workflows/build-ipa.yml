@@ -45,8 +45,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: build
-          key: cmake-ios-${{ runner.os }}-${{ hashFiles('cpp/CMakeLists.txt', 'cpp/pcsx2/CMakeLists.txt', 'cpp/common/CMakeLists.txt') }}
+          key: cmake-ios-${{ runner.os }}-${{ env.XCODE_VERSION }}-${{ env.DEPLOYMENT_TARGET }}-${{ hashFiles('cpp/CMakeLists.txt', 'cpp/pcsx2/CMakeLists.txt', 'cpp/common/CMakeLists.txt', '.github/workflows/build-ipa.yml') }}
           restore-keys: |
+            cmake-ios-${{ runner.os }}-${{ env.XCODE_VERSION }}-
             cmake-ios-${{ runner.os }}-
 
       # ── 4. Configure ─────────────────────────────────────────────────────────
@@ -82,6 +83,10 @@ jobs:
       - name: Package IPA
         run: |
           APP_PATH=$(find build -name "iPSX2.app" -maxdepth 6 | head -1)
+          if [ -z "$APP_PATH" ]; then
+            echo "error: iPSX2.app not found under build/"
+            exit 1
+          fi
           echo "Found app: $APP_PATH"
 
           # Build a minimal Payload/ structure expected by iOS sideloaders
@@ -89,11 +94,14 @@ jobs:
           cp -R "$APP_PATH" ipa_staging/Payload/iPSX2.app
 
           # Strip code signature artifacts so Sideloadly / AltStore can re-sign cleanly
-          find ipa_staging/Payload/iPSX2.app -name "_CodeSignature" -type d | xargs rm -rf
+          find ipa_staging/Payload/iPSX2.app -name "_CodeSignature" -type d -exec rm -rf {} +
           find ipa_staging/Payload/iPSX2.app -name "embedded.mobileprovision" -delete
 
           # Compute version tag for file name
-          VERSION=$(grep "IPSX2_VERSION " cpp/CMakeLists.txt | head -1 | grep -o '[0-9]\+\.[0-9]\+\.[0-9]\+')
+          VERSION=$(grep "IPSX2_VERSION " cpp/CMakeLists.txt | head -1 | grep -o '[0-9]\+\.[0-9]\+\.[0-9]\+' || true)
+          if [ -z "$VERSION" ]; then
+            VERSION="0.0.0"
+          fi
           SHORT_SHA=$(git rev-parse --short HEAD)
           IPA_NAME="iPSX2-${VERSION}-${SHORT_SHA}.ipa"
 
