@@ -1,5 +1,28 @@
 # Pcsx2Utils.cmake — utility macros for the PCSX2/iPSX2 build system
 
+# ── fixup_file_properties ─────────────────────────────────────────────────────
+# Applies per-source-file compile properties (e.g. disabling PCH for certain
+# files). This is a no-op stub — the iOS build does not use PCH.
+macro(fixup_file_properties TARGET_NAME)
+    # No-op: pre-compiled headers are disabled for the iOS/ARM64 build.
+endmacro()
+
+# ── disable_compiler_warnings_for_target ──────────────────────────────────────
+macro(disable_compiler_warnings_for_target TARGET_NAME)
+    if(TARGET ${TARGET_NAME})
+        target_compile_options(${TARGET_NAME} PRIVATE -w)
+    endif()
+endmacro()
+
+# ── add_pcsx2_library / add_pcsx2_executable ─────────────────────────────────
+macro(add_pcsx2_library NAME)
+    add_library(${NAME} ${ARGN})
+endmacro()
+
+macro(add_pcsx2_executable NAME)
+    add_executable(${NAME} ${ARGN})
+endmacro()
+
 # Guard: abort if invoked outside the top-level CMakeLists
 macro(check_no_parenthesis_in_path)
     if("${CMAKE_BINARY_DIR}" MATCHES ".*[(].*" OR "${CMAKE_SOURCE_DIR}" MATCHES ".*[(].*")
