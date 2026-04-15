@@ -40,6 +40,12 @@ jobs:
           cmake --version
           sw_vers
 
+      - name: Install Vulkan headers
+        run: |
+          brew list vulkan-headers >/dev/null 2>&1 || brew install vulkan-headers
+          mkdir -p cpp/3rdparty/vulkan/include
+          cp -R "$(brew --prefix)/include/vulkan" cpp/3rdparty/vulkan/include/
+
       # ── 3. Cache CMake build dir ─────────────────────────────────────────────
       - name: Cache CMake build
         uses: actions/cache@v4
