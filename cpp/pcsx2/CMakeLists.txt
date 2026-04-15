@@ -1216,6 +1216,16 @@ else()
 	set(PNG_LINK PNG::PNG)
 endif()
 
+set(PCSX2_SDL3_LINK_TARGET SDL3::SDL3)
+if(NOT TARGET SDL3::SDL3)
+	if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
+		set(PCSX2_SDL3_LINK_TARGET "")
+		message(STATUS "PCSX2_FLAGS: SDL3 target is unavailable on iOS, skipping SDL3 linkage.")
+	else()
+		message(FATAL_ERROR "SDL3::SDL3 target not found. Ensure SDL3 is available before configuring.")
+	endif()
+endif()
+
 target_link_libraries(PCSX2_FLAGS INTERFACE
 	common
 	imgui
@@ -1228,7 +1238,7 @@ target_link_libraries(PCSX2_FLAGS INTERFACE
 	rcheevos
 	simpleini
 	freesurround
-	SDL3::SDL3
+	${PCSX2_SDL3_LINK_TARGET}
 	${ZLIB_LINK}
 	${PNG_LINK}
 	${BZIP2_LINK}

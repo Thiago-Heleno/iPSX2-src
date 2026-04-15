@@ -213,7 +213,12 @@ if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
     set(ASSET_CATALOG "${CMAKE_SOURCE_DIR}/../assets/Assets.xcassets")
     target_sources(iPSX2 PRIVATE "${ASSET_CATALOG}")
     set_source_files_properties("${ASSET_CATALOG}" PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
-    target_link_libraries(iPSX2 PRIVATE PCSX2 SDL3::SDL3)
+    target_link_libraries(iPSX2 PRIVATE PCSX2)
+    if(TARGET SDL3::SDL3)
+        target_link_libraries(iPSX2 PRIVATE SDL3::SDL3)
+    else()
+        message(STATUS "iPSX2: SDL3 target is unavailable, skipping direct SDL3 link.")
+    endif()
     # Swift runtime link paths for device builds
     set_target_properties(iPSX2 PROPERTIES
         XCODE_ATTRIBUTE_LD_RUNPATH_SEARCH_PATHS "@executable_path/Frameworks /usr/lib/swift"
