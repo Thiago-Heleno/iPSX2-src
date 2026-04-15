@@ -232,9 +232,18 @@ struct StickView: View {
                     let d = min(dist, maxR)
                     let a = atan2(v.translation.height, v.translation.width)
                     off = CGSize(width: cos(a) * d, height: sin(a) * d)
-                    let nx = Float(cos(a) * d / maxR); let ny = Float(sin(a) * d / maxR)
-                    isLeft ? EmulatorBridge.shared.setLeftStick(x: nx, y: ny)
-                           : EmulatorBridge.shared.setRightStick(x: nx, y: ny)
+                    let s = SettingsStore.shared
+                    var nx = Float(cos(a) * d / maxR)
+                    var ny = Float(sin(a) * d / maxR)
+                    if isLeft {
+                        if s.leftStickInvertX  { nx = -nx }
+                        if s.leftStickInvertY  { ny = -ny }
+                        EmulatorBridge.shared.setLeftStick(x: nx, y: ny)
+                    } else {
+                        if s.rightStickInvertX { nx = -nx }
+                        if s.rightStickInvertY { ny = -ny }
+                        EmulatorBridge.shared.setRightStick(x: nx, y: ny)
+                    }
                 }
             }
             .onEnded { _ in

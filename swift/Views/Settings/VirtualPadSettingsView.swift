@@ -20,6 +20,28 @@ struct VirtualPadSettingsView: View {
                 Toggle("Haptic Feedback", isOn: $settings.hapticFeedback)
             }
 
+            Section {
+                Group {
+                    Text("Left Stick")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                    Toggle("Invert X axis", isOn: $settings.leftStickInvertX)
+                    Toggle("Invert Y axis", isOn: $settings.leftStickInvertY)
+                }
+                Group {
+                    Text("Right Stick")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .padding(.top, 4)
+                    Toggle("Invert X axis", isOn: $settings.rightStickInvertX)
+                    Toggle("Invert Y axis", isOn: $settings.rightStickInvertY)
+                }
+            } header: {
+                Text("Analog Sticks")
+            } footer: {
+                Text("Flip the direction of a stick axis. Useful if movement feels reversed.")
+            }
+
             Section("Layout") {
                 Button {
                     showLayoutEditor = true

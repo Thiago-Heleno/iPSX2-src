@@ -129,6 +129,20 @@ final class SettingsStore: @unchecked Sendable {
         didSet { iPSX2Bridge.setINIBool("iPSX2/UI", key: "HapticFeedback", value: hapticFeedback) }
     }
 
+    // ── Analog stick axis inversion ──
+    var leftStickInvertX: Bool {
+        didSet { iPSX2Bridge.setINIBool("iPSX2/UI", key: "LeftStickInvertX", value: leftStickInvertX) }
+    }
+    var leftStickInvertY: Bool {
+        didSet { iPSX2Bridge.setINIBool("iPSX2/UI", key: "LeftStickInvertY", value: leftStickInvertY) }
+    }
+    var rightStickInvertX: Bool {
+        didSet { iPSX2Bridge.setINIBool("iPSX2/UI", key: "RightStickInvertX", value: rightStickInvertX) }
+    }
+    var rightStickInvertY: Bool {
+        didSet { iPSX2Bridge.setINIBool("iPSX2/UI", key: "RightStickInvertY", value: rightStickInvertY) }
+    }
+
     // ── Init from INI ──
     private init() {
         // CPU
@@ -167,6 +181,10 @@ final class SettingsStore: @unchecked Sendable {
         // UI
         padOpacity = iPSX2Bridge.getINIFloat("iPSX2/UI", key: "PadOpacity", defaultValue: 0.6)
         hapticFeedback = iPSX2Bridge.getINIBool("iPSX2/UI", key: "HapticFeedback", defaultValue: true)
+        leftStickInvertX = iPSX2Bridge.getINIBool("iPSX2/UI", key: "LeftStickInvertX", defaultValue: false)
+        leftStickInvertY = iPSX2Bridge.getINIBool("iPSX2/UI", key: "LeftStickInvertY", defaultValue: false)
+        rightStickInvertX = iPSX2Bridge.getINIBool("iPSX2/UI", key: "RightStickInvertX", defaultValue: false)
+        rightStickInvertY = iPSX2Bridge.getINIBool("iPSX2/UI", key: "RightStickInvertY", defaultValue: false)
         // [P60] Force MTVU off (known buggy)
         iPSX2Bridge.setINIBool("EmuCore/Speedhacks", key: "vuThread", value: false)
         // Apply OSD preset
@@ -205,6 +223,10 @@ final class SettingsStore: @unchecked Sendable {
         osdShowFrameTimes = iPSX2Bridge.getINIBool("EmuCore/GS", key: "OsdShowFrameTimes", defaultValue: false)
         padOpacity = iPSX2Bridge.getINIFloat("iPSX2/UI", key: "PadOpacity", defaultValue: 0.6)
         hapticFeedback = iPSX2Bridge.getINIBool("iPSX2/UI", key: "HapticFeedback", defaultValue: true)
+        leftStickInvertX = iPSX2Bridge.getINIBool("iPSX2/UI", key: "LeftStickInvertX", defaultValue: false)
+        leftStickInvertY = iPSX2Bridge.getINIBool("iPSX2/UI", key: "LeftStickInvertY", defaultValue: false)
+        rightStickInvertX = iPSX2Bridge.getINIBool("iPSX2/UI", key: "RightStickInvertX", defaultValue: false)
+        rightStickInvertY = iPSX2Bridge.getINIBool("iPSX2/UI", key: "RightStickInvertY", defaultValue: false)
     }
 
     /// Apply OSD preset — writes ALL OSD flags to INI + GSConfig
