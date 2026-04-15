@@ -24,6 +24,10 @@ if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
     set(CMAKE_C_VISIBILITY_PRESET   hidden)
     set(CMAKE_CXX_VISIBILITY_PRESET hidden)
     set(CMAKE_VISIBILITY_INLINES_HIDDEN ON)
+
+    # Ensure __POSIX__ is defined globally so that POSIX-guarded includes
+    # (e.g. socket headers in DEV9) work even before Pcsx2Defs.h is included.
+    add_compile_definitions(__POSIX__=1)
 endif()
 
 # ── Optimisation and debug info ───────────────────────────────────────────────
