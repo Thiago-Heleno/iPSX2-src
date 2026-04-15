@@ -71,6 +71,7 @@ const char * PRIVATE_AGGREGATE_DEVICE_NAME = "CubebAggregateDevice";
 const uint32_t SAFE_MIN_LATENCY_FRAMES = 128;
 const uint32_t SAFE_MAX_LATENCY_FRAMES = 512;
 
+#if !TARGET_OS_IPHONE
 const AudioObjectPropertyAddress DEFAULT_INPUT_DEVICE_PROPERTY_ADDRESS = {
     kAudioHardwarePropertyDefaultInputDevice, kAudioObjectPropertyScopeGlobal,
     kAudioObjectPropertyElementMaster};
@@ -94,6 +95,7 @@ const AudioObjectPropertyAddress INPUT_DATA_SOURCE_PROPERTY_ADDRESS = {
 const AudioObjectPropertyAddress OUTPUT_DATA_SOURCE_PROPERTY_ADDRESS = {
     kAudioDevicePropertyDataSource, kAudioDevicePropertyScopeOutput,
     kAudioObjectPropertyElementMaster};
+#endif
 
 typedef uint32_t device_flags_value;
 
