@@ -1,0 +1,257 @@
+name: Build Unsigned IPA
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+jobs:
+  build-ipa:
+    name: Build Unsigned iPSX2.ipa
+    runs-on: macos-14        # Apple Silicon runner — fastest for arm64 iOS
+
+    env:
+      SCHEME: iPSX2
+      BUILD_DIR: ${{ github.workspace }}/build
+      ARCHIVE_PATH: ${{ github.workspace }}/build/iPSX2.xcarchive
+      IPA_DIR: ${{ github.workspace }}/ipa-staging
+      IPA_PATH: ${{ github.workspace }}/iPSX2-unsigned.ipa
+
+    steps:
+      # ──────────────────────────────────────────────────────────────────────────
+      # 1. Checkout
+      # ──────────────────────────────────────────────────────────────────────────
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # ──────────────────────────────────────────────────────────────────────────
+      # 2. Select Xcode
+      # ──────────────────────────────────────────────────────────────────────────
+      - name: Select latest Xcode
+        run: |
+          XCODE=$(ls /Applications | grep '^Xcode' | sort -V | tail -1)
+          echo "Using $XCODE"
+          sudo xcode-select -s "/Applications/$XCODE/Contents/Developer"
+          xcodebuild -version
+          swift --version
+
+      # ──────────────────────────────────────────────────────────────────────────
+      # 3. Install build tools
+      # ──────────────────────────────────────────────────────────────────────────
+      - name: Install build tools
+        run: |
+          brew update --quiet
+          brew install cmake xcbeautify || true
+
+      # ──────────────────────────────────────────────────────────────────────────
+      # 4. ccache
+      # ──────────────────────────────────────────────────────────────────────────
+      - name: Setup ccache
+        uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: ${{ runner.os }}-${{ runner.arch }}-${{ github.ref_name }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-
+          max-size: 2G
+
+      # ──────────────────────────────────────────────────────────────────────────
+      # 5. CMake configure
+      #    FIX: use 'set -o pipefail' so the pipe to tee does NOT swallow cmake's
+      #    non-zero exit code. Without this, cmake can fail but the step passes.
+      # ──────────────────────────────────────────────────────────────────────────
+      - name: CMake configure (Xcode generator, iphoneos SDK)
+        working-directory: cpp
+        run: |
+          set -euo pipefail
+          cmake -B ../build \
+            -G Xcode \
+            -DCMAKE_SYSTEM_NAME=iOS \
+            -DCMAKE_OSX_SYSROOT=iphoneos \
+            -DCMAKE_OSX_ARCHITECTURES=arm64 \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=18.0 \
+            -DiPSX2_REAL_DEVICE=ON \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
+            -DUSE_DISCORD_SDK=OFF \
+            -DUSE_VULKAN=OFF \
+            -DSDL_VULKAN=OFF \
+            -DSDL_RENDER_VULKAN=OFF \
+            -DENABLE_TESTS=OFF \
+            -DENABLE_GSRUNNER=OFF \
+            -DWEBP_BUILD_ANIM_UTILS=OFF \
+            -DWEBP_BUILD_CWEBP=OFF \
+            -DWEBP_BUILD_DWEBP=OFF \
+            -DWEBP_BUILD_GIF2WEBP=OFF \
+            -DWEBP_BUILD_IMG2WEBP=OFF \
+            -DWEBP_BUILD_VWEBP=OFF \
+            -DWEBP_BUILD_WEBPINFO=OFF \
+            -DWEBP_BUILD_WEBPMUX=OFF \
+            -DWEBP_BUILD_EXTRAS=OFF \
+            -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_REQUIRED=NO \
+            -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_ALLOWED=NO \
+            "-DCMAKE_XCODE_ATTRIBUTE_CODE_SIGN_IDENTITY=" \
+            --fresh 2>&1 | tee /tmp/cmake_configure.log
+          # Verify exit code — 'tee' can swallow it; re-check the log for errors
+          if grep -q "^CMake Error" /tmp/cmake_configure.log; then
+            echo "❌ CMake configure reported errors (see above)"
+            exit 1
+          fi
+          echo "✅ CMake configure completed successfully"
+
+
+      # ──────────────────────────────────────────────────────────────────────────
+      # 6. Generate compile_commands.json
+      #    Xcode generator doesn't emit compile_commands.json; extract it from
+      #    the Xcode build log via xcpretty-json-formatter or generate a stub.
+      #    NOTE: Ninja + CMAKE_SYSTEM_NAME=iOS cross-compile requires a full
+      #    toolchain file and fails without one, so we skip Ninja here.
+      # ──────────────────────────────────────────────────────────────────────────
+      - name: Generate compile_commands.json (stub)
+        run: |
+          echo "[]" > "$BUILD_DIR/compile_commands.json"
+          echo "Note: full compile_commands.json requires a Ninja iOS toolchain; stub written."
+
+      - name: Upload compile_commands.json
+        uses: actions/upload-artifact@v4
+        with:
+          name: compile-commands-${{ github.run_number }}
+          path: ${{ env.BUILD_DIR }}/compile_commands.json
+          retention-days: 30
+          if-no-files-found: warn
+
+      # ──────────────────────────────────────────────────────────────────────────
+      # 7. Discover the generated .xcodeproj path
+      #    Auto-detect instead of hardcoding, in case the project name differs.
+      # ──────────────────────────────────────────────────────────────────────────
+      - name: Discover xcodeproj
+        run: |
+          echo "=== Contents of build/ ==="
+          ls -la "$BUILD_DIR" || echo "(build dir empty or missing)"
+
+          XCODEPROJ=$(find "$BUILD_DIR" -maxdepth 1 -name "*.xcodeproj" | head -1)
+          if [ -z "$XCODEPROJ" ]; then
+            echo "❌ No .xcodeproj found in $BUILD_DIR — CMake configure must have failed."
+            echo "=== Last 50 lines of cmake log ==="
+            tail -50 /tmp/cmake_configure.log || true
+            exit 1
+          fi
+
+          echo "✅ Found: $XCODEPROJ"
+          # Export for subsequent steps
+          echo "XCODEPROJ=$XCODEPROJ" >> $GITHUB_ENV
+
+          # List available schemes
+          echo "=== Available schemes ==="
+          xcodebuild -project "$XCODEPROJ" -list 2>&1 || true
+
+      # ──────────────────────────────────────────────────────────────────────────
+      # 7. Build & Archive (unsigned)
+      # ──────────────────────────────────────────────────────────────────────────
+      - name: Build & Archive (unsigned)
+        run: |
+          set -o pipefail
+          xcodebuild archive \
+            -project "$XCODEPROJ" \
+            -scheme "$SCHEME" \
+            -configuration Release \
+            -sdk iphoneos \
+            -archivePath "$ARCHIVE_PATH" \
+            ONLY_ACTIVE_ARCH=NO \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            DEVELOPMENT_TEAM="" \
+            PROVISIONING_PROFILE_SPECIFIER="" \
+            SKIP_INSTALL=NO \
+            2>&1 | xcbeautify
+          # Hard-fail if the archive was not produced
+          test -d "$ARCHIVE_PATH" || (echo "❌ Archive not found at $ARCHIVE_PATH" && exit 1)
+          echo "✅ Archive created: $ARCHIVE_PATH"
+
+      # ──────────────────────────────────────────────────────────────────────────
+      # 8. Assemble unsigned IPA manually
+      #    Payload/ + SwiftSupport/iphoneos/ → zip → .ipa
+      # ──────────────────────────────────────────────────────────────────────────
+      - name: Assemble unsigned IPA
+        run: |
+          set -euo pipefail
+
+          # Search for the .app securely across the whole build/archive directory 
+          # AND Xcode's DerivedData! CMake + Xcode often isolates archive payloads there.
+          APP_PATH=$(find "$BUILD_DIR" ~/Library/Developer/Xcode/DerivedData -name "iPSX2*.app" -type d 2>/dev/null | head -1 || true)
+          if [ -z "$APP_PATH" ] || [ ! -d "$APP_PATH" ]; then
+            echo "❌ Could not find .app in $BUILD_DIR or DerivedData"
+            # Just for debugging, let's dump where EVERYTHING is
+            find /Users/runner -name "iPSX2*.app" -type d 2>/dev/null || true
+            exit 1
+          fi
+
+          mkdir -p "$IPA_DIR/Payload"
+          mkdir -p "$IPA_DIR/SwiftSupport/iphoneos"
+
+          cp -rP "$APP_PATH" "$IPA_DIR/Payload/"
+          APP_NAME=$(basename "$APP_PATH")
+          echo "Copied $APP_NAME into Payload/"
+
+          SWIFT_LIBS_DIR="$(xcode-select -p)/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/iphoneos"
+          FRAMEWORKS_DIR="$IPA_DIR/Payload/$APP_NAME/Frameworks"
+          if [ -d "$FRAMEWORKS_DIR" ]; then
+            for dylib in "$FRAMEWORKS_DIR"/libswift*.dylib; do
+              [ -f "$dylib" ] || continue
+              libname=$(basename "$dylib")
+              [ -f "$SWIFT_LIBS_DIR/$libname" ] && \
+                cp "$SWIFT_LIBS_DIR/$libname" "$IPA_DIR/SwiftSupport/iphoneos/$libname" && \
+                echo "  SwiftSupport ← $libname"
+            done
+          fi
+
+          cd "$IPA_DIR"
+          zip -qyr "$IPA_PATH" Payload SwiftSupport
+          echo "✅ IPA assembled: $(du -sh "$IPA_PATH" | cut -f1)"
+
+      # ──────────────────────────────────────────────────────────────────────────
+      # 9. Verify IPA structure
+      # ──────────────────────────────────────────────────────────────────────────
+      - name: Verify IPA structure
+        run: |
+          echo "=== IPA internal structure (first 35 entries) ==="
+          unzip -l "$IPA_PATH" | head -35
+          unzip -l "$IPA_PATH" | grep -q "Payload/.*\.app/" \
+            && echo "✅ App bundle found inside Payload" \
+            || (echo "❌ IPA is malformed" && exit 1)
+
+      # ──────────────────────────────────────────────────────────────────────────
+      # 10. Upload IPA artifact
+      # ──────────────────────────────────────────────────────────────────────────
+      - name: Upload unsigned IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: iPSX2-unsigned-${{ github.run_number }}
+          path: ${{ env.IPA_PATH }}
+          retention-days: 30
+          if-no-files-found: error
+
+      # ──────────────────────────────────────────────────────────────────────────
+      # 11. ccache stats
+      # ──────────────────────────────────────────────────────────────────────────
+      - name: ccache stats
+        if: always()
+        run: ccache --show-stats
+
+      # ──────────────────────────────────────────────────────────────────────────
+      # 12. Upload full logs on failure
+      # ──────────────────────────────────────────────────────────────────────────
+      - name: Upload build logs (on failure)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-logs-${{ github.run_number }}
+          path: |
+            /tmp/cmake_configure.log
+            ~/Library/Logs/DiagnosticReports/
+          retention-days: 7
+          if-no-files-found: ignore
