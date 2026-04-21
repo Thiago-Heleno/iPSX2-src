@@ -382,7 +382,7 @@ static void COP2_Interlock(bool mBitSync)
 				// Why do we check this here? Ratchet games, maybe others end up with flickering polygons
 				// when we use lazy COP2 sync, otherwise. The micro resumption getting deferred an extra
 				// EE block is apparently enough to cause issues.
-				if (EmuConfig.Gamefixes.VUSyncHack || EmuConfig.Gamefixes.FullVU0SyncHack) {
+				if (EmuConfig.Gamefixes.VUSyncHack || EmuConfig.Gamefixes.FullVU0SyncHack || CHECK_VUADDSUBHACK) {
 //                    xSUB(eax, ptr32[&VU0.nextBlockCycles]);
                     armAsm->Sub(EAX, EAX, armLoadPtr(PTR_CPU(vuRegs[0].nextBlockCycles)));
                 }
@@ -488,7 +488,7 @@ static void recCFC2()
 
 	if (!(cpuRegs.code & 1))
 	{
-		if (g_pCurInstInfo->info & EEINST_COP2_SYNC_VU0)
+		if ((g_pCurInstInfo->info & EEINST_COP2_SYNC_VU0) || (CHECK_VUADDSUBHACK && _Rd_ >= 16))
 			mVUSyncVU0();
 		else if (g_pCurInstInfo->info & EEINST_COP2_FINISH_VU0)
 			mVUFinishVU0();
@@ -569,7 +569,7 @@ static void recCTC2()
 
 	if (!(cpuRegs.code & 1))
 	{
-		if (g_pCurInstInfo->info & EEINST_COP2_SYNC_VU0)
+		if ((g_pCurInstInfo->info & EEINST_COP2_SYNC_VU0) || (CHECK_VUADDSUBHACK && _Rd_ >= 16))
 			mVUSyncVU0();
 		else if (g_pCurInstInfo->info & EEINST_COP2_FINISH_VU0)
 			mVUFinishVU0();
@@ -808,7 +808,7 @@ static void recQMFC2()
 
 	if (!(cpuRegs.code & 1))
 	{
-		if (g_pCurInstInfo->info & EEINST_COP2_SYNC_VU0)
+		if ((g_pCurInstInfo->info & EEINST_COP2_SYNC_VU0) || (CHECK_VUADDSUBHACK && _Rd_ >= 16))
 			mVUSyncVU0();
 		else if (g_pCurInstInfo->info & EEINST_COP2_FINISH_VU0)
 			mVUFinishVU0();
@@ -854,7 +854,7 @@ static void recQMTC2()
 
 	if (!(cpuRegs.code & 1))
 	{
-		if (g_pCurInstInfo->info & EEINST_COP2_SYNC_VU0)
+		if ((g_pCurInstInfo->info & EEINST_COP2_SYNC_VU0) || (CHECK_VUADDSUBHACK && _Rd_ >= 16))
 			mVUSyncVU0();
 		else if (g_pCurInstInfo->info & EEINST_COP2_FINISH_VU0)
 			mVUFinishVU0();

@@ -7702,8 +7702,8 @@ __ri void GSRendererHW::DrawPrims(GSTextureCache::Target* rt, GSTextureCache::Ta
 		}
 		else
 		{
-			ox2 = -1.0f / unscaled_x;
-			oy2 = -1.0f / unscaled_y;
+			ox2 = (unscaled_x > 0) ? -1.0f / unscaled_x : 0.0f;
+			oy2 = (unscaled_y > 0) ? -1.0f / unscaled_y : 0.0f;
 		}
 	}
 

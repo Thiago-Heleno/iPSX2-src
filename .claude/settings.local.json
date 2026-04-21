@@ -14,7 +14,12 @@
       "Bash(git rm *)",
       "Bash(git commit -m 'Remove stray .tmp files from failed awk attempt *)",
       "Bash(git commit *)",
-      "Bash(xargs grep *)"
+      "Bash(xargs grep *)",
+      "Bash(git -C \"C:/Users/tibis/OneDrive/Desktop/iPSX2-src-main\" status)",
+      "Bash(git -C \"C:/Users/tibis/OneDrive/Desktop/iPSX2-src-main\" diff)",
+      "Bash(git -C \"C:/Users/tibis/OneDrive/Desktop/iPSX2-src-main\" log --oneline -5)",
+      "Bash(git -C \"C:/Users/tibis/OneDrive/Desktop/iPSX2-src-main\" branch -a)",
+      "Bash(git *)"
     ]
   }
 }

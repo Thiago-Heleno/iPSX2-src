@@ -199,19 +199,19 @@ void GameDatabase::parseAndInsert(const std::string_view serial, const c4::yml::
 			bool fixValidated = false;
 			auto fix = std::string(n.val().str, n.val().len);
 
-			// Enum values don't end with Hack, but gamedb does, so remove it before comparing.
-			if (fix.ends_with("Hack"))
+			// Enum values don't end with Hack, but some gamedb entries might.
+			// Try matching the name as-is first, then try stripping 'Hack' if present.
+			for (GamefixId id = GamefixId_FIRST; id < GamefixId_COUNT; id = static_cast<GamefixId>(enum_cast(id) + 1))
 			{
-				fix.erase(fix.size() - 4);
-				for (GamefixId id = GamefixId_FIRST; id < GamefixId_COUNT; id = static_cast<GamefixId>(enum_cast(id) + 1))
+				const char* enumName = Pcsx2Config::GamefixOptions::GetGameFixName(id);
+				if (fix.compare(enumName) == 0 || (fix.ends_with("Hack") && fix.substr(0, fix.size() - 4).compare(enumName) == 0))
 				{
-					if (fix.compare(Pcsx2Config::GamefixOptions::GetGameFixName(id)) == 0 &&
-						std::find(gameEntry.gameFixes.begin(), gameEntry.gameFixes.end(), id) == gameEntry.gameFixes.end())
+					if (std::find(gameEntry.gameFixes.begin(), gameEntry.gameFixes.end(), id) == gameEntry.gameFixes.end())
 					{
 						gameEntry.gameFixes.push_back(id);
-						fixValidated = true;
-						break;
 					}
+					fixValidated = true;
+					break;
 				}
 			}
 
