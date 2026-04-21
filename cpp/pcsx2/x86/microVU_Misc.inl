@@ -548,18 +548,23 @@ void MIN_MAX_PS(microVU& mVU, const xmm& to, const xmm& from, const xmm& t1in, c
 void MIN_MAX_SS(mV, const xmm& to, const xmm& from, const xmm& t1in, bool min)
 {
 	const xmm& t1 = t1in.IsNone() ? mVU.regAlloc->allocReg() : t1in;
-	const a64::VRegister v30 = a64::VRegister(30);
+	const a64::VRegister vTemp = a64::VRegister(27);
 
-    armAsm->Mov(v30.Q(), to.Q());
-    armSHUFPS(v30, from, 0);
-    armAsm->And(v30.V16B(), v30.V16B(), armLoadPtrV(PTR_CPU(mVUss4.sseMasks.MIN_MAX_1)).V16B());
-    armAsm->Orr(v30.V16B(), v30.V16B(), armLoadPtrV(PTR_CPU(mVUss4.sseMasks.MIN_MAX_2)).V16B());
-    armAsm->Dup(t1.V2D(), v30.V2D(), 1); //v3v2v3v2
-    if (min) armAsm->Fminnm(v30.V2D(), v30.V2D(), t1.V2D());
-    else     armAsm->Fmaxnm(v30.V2D(), v30.V2D(), t1.V2D());
+    armAsm->Mov(vTemp.Q(), to.Q());
+    armSHUFPS(vTemp, from, 0);
+    
+    a64::VRegister mask1 = armLoadPtrV(PTR_CPU(mVUss4.sseMasks.MIN_MAX_1));
+    armAsm->And(vTemp.V16B(), vTemp.V16B(), mask1.V16B());
+    
+    a64::VRegister mask2 = armLoadPtrV(PTR_CPU(mVUss4.sseMasks.MIN_MAX_2));
+    armAsm->Orr(vTemp.V16B(), vTemp.V16B(), mask2.V16B());
+
+    armAsm->Dup(t1.V2D(), vTemp.V2D(), 1); //v3v2v3v2
+    if (min) armAsm->Fminnm(vTemp.V2D(), vTemp.V2D(), t1.V2D());
+    else     armAsm->Fmaxnm(vTemp.V2D(), vTemp.V2D(), t1.V2D());
 
     // Insert the computed element 0 back into `to`, preserving its upper 3 elements!
-    armAsm->Ins(to.V4S(), 0, v30.V4S(), 0);
+    armAsm->Ins(to.V4S(), 0, vTemp.V4S(), 0);
 
     if (!t1.Is(t1in))
 		mVU.regAlloc->clearNeeded(t1);
@@ -601,7 +606,10 @@ void ADD_SS_Single_Guard_Bit(microVU& mVU, const xmm& to, const xmm& from, const
 
     // case_pos_big:
 //	xPAND(to, ptr128[sseMasks.ADD_SS]);
-    armAsm->And(to.V16B(), to.V16B(), armLoadPtrV(PTR_CPU(mVUss4.sseMasks.ADD_SS)).V16B());
+    {
+        a64::VRegister mask = armLoadPtrV(PTR_CPU(mVUss4.sseMasks.ADD_SS));
+        armAsm->And(to.V16B(), to.V16B(), mask.V16B());
+    }
 //	xForwardJump8 case_end2;
     a64::Label case_end2;
     armAsm->B(&case_end2);
@@ -633,7 +641,10 @@ void ADD_SS_Single_Guard_Bit(microVU& mVU, const xmm& to, const xmm& from, const
 
     // case_neg_big:
 //	xPAND(from, ptr128[sseMasks.ADD_SS]);
-    armAsm->And(from.V16B(), from.V16B(), armLoadPtrV(PTR_CPU(mVUss4.sseMasks.ADD_SS)).V16B());
+    {
+        a64::VRegister mask = armLoadPtrV(PTR_CPU(mVUss4.sseMasks.ADD_SS));
+        armAsm->And(from.V16B(), from.V16B(), mask.V16B());
+    }
 //	xForwardJump8 case_end4;
     a64::Label case_end4;
     armAsm->B(&case_end4);
@@ -662,8 +673,11 @@ void ADD_SS_Single_Guard_Bit(microVU& mVU, const xmm& to, const xmm& from, const
     armBind(&case_end4);
 
 //	xADD.SS(to, from);
-    armAsm->Fadd(a64::VRegister(30).S(), to.S(), from.S());
-    armAsm->Ins(to.V4S(), 0, a64::VRegister(30).V4S(), 0);
+    {
+        const a64::VRegister vTemp = a64::VRegister(27);
+        armAsm->Fadd(vTemp.S(), to.S(), from.S());
+        armAsm->Ins(to.V4S(), 0, vTemp.V4S(), 0);
+    }
     if (!t1.Is(t1in))
 		mVU.regAlloc->clearNeeded(t1);
 }
@@ -700,7 +714,10 @@ void ADD_SS_TriAceHack(microVU& mVU, const xmm& to, const xmm& from)
 
     // case_pos_big:
 //	xPAND(to, ptr128[sseMasks.ADD_SS]);
-    armAsm->And(to.V16B(), to.V16B(), armLoadPtrV(PTR_CPU(mVUss4.sseMasks.ADD_SS)).V16B());
+    {
+        a64::VRegister mask = armLoadPtrV(PTR_CPU(mVUss4.sseMasks.ADD_SS));
+        armAsm->And(to.V16B(), to.V16B(), mask.V16B());
+    }
 //	xForwardJump8 case_end2;
     a64::Label case_end2;
     armAsm->B(&case_end2);
@@ -708,7 +725,10 @@ void ADD_SS_TriAceHack(microVU& mVU, const xmm& to, const xmm& from)
 //	case_neg_big.SetTarget();
     armBind(&case_neg_big);
 //	xPAND(from, ptr128[sseMasks.ADD_SS]);
-    armAsm->And(from.V16B(), from.V16B(), armLoadPtrV(PTR_CPU(mVUss4.sseMasks.ADD_SS)).V16B());
+    {
+        a64::VRegister mask = armLoadPtrV(PTR_CPU(mVUss4.sseMasks.ADD_SS));
+        armAsm->And(from.V16B(), from.V16B(), mask.V16B());
+    }
 
 //	case_end1.SetTarget();
     armBind(&case_end1);
@@ -716,8 +736,11 @@ void ADD_SS_TriAceHack(microVU& mVU, const xmm& to, const xmm& from)
     armBind(&case_end2);
 
 //	xADD.SS(to, from);
-    armAsm->Fadd(a64::VRegister(30).S(), to.S(), from.S());
-    armAsm->Ins(to.V4S(), 0, a64::VRegister(30).V4S(), 0);
+    {
+        const a64::VRegister vTemp = a64::VRegister(27);
+        armAsm->Fadd(vTemp.S(), to.S(), from.S());
+        armAsm->Ins(to.V4S(), 0, vTemp.V4S(), 0);
+    }
 }
 
 #define clampOp(opX, isPS) \
@@ -727,8 +750,9 @@ void ADD_SS_TriAceHack(microVU& mVU, const xmm& to, const xmm& from)
 		if (isPS) { \
 			opX(to.V4S(), to.V4S(), from.V4S()); \
 		} else { \
-			opX(a64::VRegister(30).V4S(), to.V4S(), from.V4S()); \
-			armAsm->Ins(to.V4S(), 0, a64::VRegister(30).V4S(), 0); \
+			const a64::VRegister vTemp = a64::VRegister(27); \
+			opX(vTemp.V4S(), to.V4S(), from.V4S()); \
+			armAsm->Ins(to.V4S(), 0, vTemp.V4S(), 0); \
 		} \
 		mVUclamp4(mVU, to, t1, (isPS) ? 0xf : 0x8); \
 	} while (0)
