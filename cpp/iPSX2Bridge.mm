@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0+
 
 #import "iPSX2Bridge.h"
+#include <atomic>
 #include <SDL3/SDL.h>
 
 extern "C" void iPSX2_SetSDLFullscreen(bool enabled);
@@ -92,7 +93,7 @@ static NSDate* s_lastNVMSaveDate = nil;
         u32 idx = buttonMap[(int)button];
         pad->Set(idx, pressed ? 1.0f : 0.0f);
         // Update touch state so PumpMessagesOnCPUThread doesn't override
-        extern bool g_touchPadState[64];
+        extern std::atomic<bool> g_touchPadState[64];
         if (idx < 64) g_touchPadState[idx] = pressed;
     }
 }

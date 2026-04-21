@@ -91,7 +91,7 @@ extern void GSResizeDisplayWindow(int width, int height, float scale);
 iPSX2GameView* g_gameRenderView = nil;  // non-static: accessed from iPSX2Bridge.mm
 
 // Touch pad state
-bool g_touchPadState[64] = {};
+std::atomic<bool> g_touchPadState[64] = {};
 
 // Persistent VM thread lifecycle
 static std::atomic<bool> s_vmThreadActive{false};   // true while VM is executing
@@ -670,12 +670,8 @@ INISettingsInterface* g_p44_settings_interface = nullptr;
             // Audio
             s_settings_interface->SetStringValue("SPU2/Output", "Backend", "SDL");
 
-            // GS
-            s_settings_interface->SetIntValue("EmuCore/GS", "VsyncQueueSize", 8);
-            // Enable PCRTC display offsets — required for correct framebuffer positioning
-            // in many PS2 games (R&C, etc.) that use DISPLAY register offsets.
-            s_settings_interface->SetBoolValue("EmuCore/GS", "pcrtc_offsets", true);
-            s_settings_interface->SetBoolValue("EmuCore/GS", "pcrtc_antiblur", true);
+            // GS — use PCSX2 defaults; pcrtc_offsets controlled per-game via game database
+            s_settings_interface->SetIntValue("EmuCore/GS", "VsyncQueueSize", 2);
 
             // Speedhacks
             s_settings_interface->SetBoolValue("EmuCore/Speedhacks", "MTVU", false);
@@ -699,12 +695,7 @@ INISettingsInterface* g_p44_settings_interface = nullptr;
     if (!s_settings_interface->ContainsValue("EmuCore/CPU", "ExtraMemory")) {
         s_settings_interface->SetBoolValue("EmuCore/CPU", "ExtraMemory", false);
     }
-    if (!s_settings_interface->ContainsValue("EmuCore/GS", "pcrtc_offsets")) {
-        s_settings_interface->SetBoolValue("EmuCore/GS", "pcrtc_offsets", true);
-    }
-    if (!s_settings_interface->ContainsValue("EmuCore/GS", "pcrtc_antiblur")) {
-        s_settings_interface->SetBoolValue("EmuCore/GS", "pcrtc_antiblur", true);
-    }
+
     s_settings_interface->Save();
     [self checkAndConfigureBIOS];
 
