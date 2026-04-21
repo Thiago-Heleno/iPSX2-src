@@ -7,7 +7,14 @@
       "Bash(git config *)",
       "Bash(git init *)",
       "Bash(git remote *)",
-      "Bash(git add *)"
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git push *)",
+      "Bash(python3 *)",
+      "Bash(git rm *)",
+      "Bash(git commit -m 'Remove stray .tmp files from failed awk attempt *)",
+      "Bash(git commit *)",
+      "Bash(xargs grep *)"
     ]
   }
 }

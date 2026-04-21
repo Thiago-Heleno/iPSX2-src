@@ -544,27 +544,26 @@ void MIN_MAX_PS(microVU& mVU, const xmm& to, const xmm& from, const xmm& t1in, c
     if (!t2.Is(t2in)) mVU.regAlloc->clearNeeded(t2);
 }
 
-// Warning: Modifies to's upper 3 vectors, and t1
+// Warning: Modifies t1
 void MIN_MAX_SS(mV, const xmm& to, const xmm& from, const xmm& t1in, bool min)
 {
 	const xmm& t1 = t1in.IsNone() ? mVU.regAlloc->allocReg() : t1in;
-//	xSHUF.PS(to, from, 0);
-    armSHUFPS(to, from, 0);
-//	xPAND   (to, ptr128[sseMasks.MIN_MAX_1]);
-    armAsm->And(to.V16B(), to.V16B(), armLoadPtrV(PTR_CPU(mVUss4.sseMasks.MIN_MAX_1)).V16B());
-//	xPOR    (to, ptr128[sseMasks.MIN_MAX_2]);
-    armAsm->Orr(to.V16B(), to.V16B(), armLoadPtrV(PTR_CPU(mVUss4.sseMasks.MIN_MAX_2)).V16B());
-//	xPSHUF.D(t1, to, 0xee);
-    armAsm->Dup(t1.V2D(), to.V2D(), 1); //v3v2v3v2
-//	if (min) xMIN.PD(to, t1);
-//	else	 xMAX.PD(to, t1);
-    if (min) armAsm->Fminnm(to.V2D(), to.V2D(), t1.V2D());
-    else     armAsm->Fmaxnm(to.V2D(), to.V2D(), t1.V2D());
-    if (!t1.Is(t1in)) 
-		mVU.regAlloc->clearNeeded(t1);
-}
+	const a64::VRegister v30 = a64::VRegister(30);
 
-// Not Used! - TriAce games only need a portion of this code to boot (see function below)
+    armAsm->Mov(v30.Q(), to.Q());
+    armSHUFPS(v30, from, 0);
+    armAsm->And(v30.V16B(), v30.V16B(), armLoadPtrV(PTR_CPU(mVUss4.sseMasks.MIN_MAX_1)).V16B());
+    armAsm->Orr(v30.V16B(), v30.V16B(), armLoadPtrV(PTR_CPU(mVUss4.sseMasks.MIN_MAX_2)).V16B());
+    armAsm->Dup(t1.V2D(), v30.V2D(), 1); //v3v2v3v2
+    if (min) armAsm->Fminnm(v30.V2D(), v30.V2D(), t1.V2D());
+    else     armAsm->Fmaxnm(v30.V2D(), v30.V2D(), t1.V2D());
+
+    // Insert the computed element 0 back into `to`, preserving its upper 3 elements!
+    armAsm->Ins(to.V4S(), 0, v30.V4S(), 0);
+
+    if (!t1.Is(t1in))
+		mVU.regAlloc->clearNeeded(t1);
+}// Not Used! - TriAce games only need a portion of this code to boot (see function below)
 // What this code attempts to do is do a floating point ADD with only 1 guard bit,
 // whereas FPU calculations that follow the IEEE standard have 3 guard bits (guard|round|sticky)
 // Warning: Modifies all vectors in 'to' and 'from', and Modifies t1in
@@ -616,7 +615,8 @@ void ADD_SS_Single_Guard_Bit(microVU& mVU, const xmm& to, const xmm& from, const
 //	xSHL   (eax, cl);
     armAsm->Lsl(EAX, EAX, ECX);
 //	xMOVDZX(t1, eax);
-    armAsm->Fmov(t1.S(), EAX);
+    armAsm->Movi(t1.V16B(), 0xFF);
+    armAsm->Ins(t1.V4S(), 0, EAX);
 //	xPAND  (to, t1);
     armAsm->And(to.V16B(), to.V16B(), t1.V16B());
 //	xForwardJump8 case_end3;
@@ -647,7 +647,8 @@ void ADD_SS_Single_Guard_Bit(microVU& mVU, const xmm& to, const xmm& from, const
 //	xSHL   (eax, cl);
     armAsm->Lsl(EAX, EAX, ECX);
 //	xMOVDZX(t1, eax);
-    armAsm->Fmov(t1.S(), EAX);
+    armAsm->Movi(t1.V16B(), 0xFF);
+    armAsm->Ins(t1.V4S(), 0, EAX);
 //	xPAND  (from, t1);
     armAsm->And(from.V16B(), from.V16B(), t1.V16B());
 
@@ -661,7 +662,8 @@ void ADD_SS_Single_Guard_Bit(microVU& mVU, const xmm& to, const xmm& from, const
     armBind(&case_end4);
 
 //	xADD.SS(to, from);
-    armAsm->Fadd(to.S(), to.S(), from.S());
+    armAsm->Fadd(a64::VRegister(30).S(), to.S(), from.S());
+    armAsm->Ins(to.V4S(), 0, a64::VRegister(30).V4S(), 0);
     if (!t1.Is(t1in))
 		mVU.regAlloc->clearNeeded(t1);
 }
@@ -714,14 +716,20 @@ void ADD_SS_TriAceHack(microVU& mVU, const xmm& to, const xmm& from)
     armBind(&case_end2);
 
 //	xADD.SS(to, from);
-    armAsm->Fadd(to.S(), to.S(), from.S());
+    armAsm->Fadd(a64::VRegister(30).S(), to.S(), from.S());
+    armAsm->Ins(to.V4S(), 0, a64::VRegister(30).V4S(), 0);
 }
 
 #define clampOp(opX, isPS) \
 	do { \
 		mVUclamp3(mVU, to, t1, (isPS) ? 0xf : 0x8); \
 		mVUclamp3(mVU, from, t1, (isPS) ? 0xf : 0x8); \
-		opX(to.V4S(), to.V4S(), from.V4S()); \
+		if (isPS) { \
+			opX(to.V4S(), to.V4S(), from.V4S()); \
+		} else { \
+			opX(a64::VRegister(30).V4S(), to.V4S(), from.V4S()); \
+			armAsm->Ins(to.V4S(), 0, a64::VRegister(30).V4S(), 0); \
+		} \
 		mVUclamp4(mVU, to, t1, (isPS) ? 0xf : 0x8); \
 	} while (0)
 
