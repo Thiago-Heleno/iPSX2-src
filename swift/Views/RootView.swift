@@ -2,19 +2,12 @@
 // SPDX-License-Identifier: GPL-3.0+
 
 import SwiftUI
+import UIKit
 
 struct RootView: View {
     @State private var appState = AppState.shared
     @State private var fileImporter = FileImportHandler.shared
     @AppStorage("colorScheme") private var colorSchemeRaw: String = "system"
-
-    private var preferredColorScheme: ColorScheme? {
-        switch colorSchemeRaw {
-        case "light": return .light
-        case "dark":  return .dark
-        default:      return nil
-        }
-    }
 
     var body: some View {
         ZStack {
@@ -27,7 +20,8 @@ struct RootView: View {
                 GameScreenView()
             }
         }
-        .preferredColorScheme(preferredColorScheme)
+        .onAppear { applyTheme(colorSchemeRaw) }
+        .onChange(of: colorSchemeRaw) { _, newValue in applyTheme(newValue) }
         .onOpenURL { url in
             fileImporter.handleURL(url)
         }
@@ -36,6 +30,19 @@ struct RootView: View {
         } message: {
             Text(fileImporter.lastImportMessage ?? "")
         }
+    }
+
+    private func applyTheme(_ scheme: String) {
+        let style: UIUserInterfaceStyle
+        switch scheme {
+        case "light": style = .light
+        case "dark":  style = .dark
+        default:      style = .unspecified
+        }
+        UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .flatMap { $0.windows }
+            .forEach { $0.overrideUserInterfaceStyle = style }
     }
 }
 

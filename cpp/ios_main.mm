@@ -672,6 +672,10 @@ INISettingsInterface* g_p44_settings_interface = nullptr;
 
             // GS
             s_settings_interface->SetIntValue("EmuCore/GS", "VsyncQueueSize", 8);
+            // Enable PCRTC display offsets — required for correct framebuffer positioning
+            // in many PS2 games (R&C, etc.) that use DISPLAY register offsets.
+            s_settings_interface->SetBoolValue("EmuCore/GS", "pcrtc_offsets", true);
+            s_settings_interface->SetBoolValue("EmuCore/GS", "pcrtc_antiblur", true);
 
             // Speedhacks
             s_settings_interface->SetBoolValue("EmuCore/Speedhacks", "MTVU", false);
@@ -694,6 +698,12 @@ INISettingsInterface* g_p44_settings_interface = nullptr;
     }
     if (!s_settings_interface->ContainsValue("EmuCore/CPU", "ExtraMemory")) {
         s_settings_interface->SetBoolValue("EmuCore/CPU", "ExtraMemory", false);
+    }
+    if (!s_settings_interface->ContainsValue("EmuCore/GS", "pcrtc_offsets")) {
+        s_settings_interface->SetBoolValue("EmuCore/GS", "pcrtc_offsets", true);
+    }
+    if (!s_settings_interface->ContainsValue("EmuCore/GS", "pcrtc_antiblur")) {
+        s_settings_interface->SetBoolValue("EmuCore/GS", "pcrtc_antiblur", true);
     }
     s_settings_interface->Save();
     [self checkAndConfigureBIOS];
