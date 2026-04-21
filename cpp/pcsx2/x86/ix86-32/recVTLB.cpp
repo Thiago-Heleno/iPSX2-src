@@ -1507,18 +1507,20 @@ void vtlb_DynGenWrite(u32 sz, bool xmm, int addr_reg, int value_reg)
 
         armBind(&kseg1_do_fastmem);
     }
-    // [iter672] EE HW register write bypass: addresses 0x10000000-0x1000FFFF
-    // must go through memWrite32 → hwWrite32 which has special semantics
+    // [iter672] EE HW register write bypass: full range 0x10000000-0x1FFFFFFF
+    // must go through memWriteN → hwWriteN which has special semantics
     // (e.g. SBUS_F230 does &= ~value for bit-clear, not direct store).
-    // Without this, fastmem direct stores bypass hwWrite32 entirely.
+    // Previously checked only 0x1000xxxx (addr>>16==0x1000), missing GS MMIO at
+    // 0x12000010 (addr>>16=0x1200) which caused SIGBUS via direct fastmem STR.
+    // Now mirrors the read-path check: addr & 0xF0000000 == 0x10000000.
     // Removal condition: なし (permanent fix — HW register writes must always use handler)
     a64::Label eehw_do_fastmem;
     a64::Label eehw_store_done;
     if (emit_spad_write_bypass)
     {
         armAsm->Mov(a64::w10, a64::WRegister(addr_reg));
-        armAsm->Lsr(a64::w10, a64::w10, 16);  // top 16 bits
-        armAsm->Cmp(a64::w10, 0x1000);         // 0x1000xxxx range
+        armAsm->And(a64::w10, a64::w10, 0xF0000000);  // top nibble
+        armAsm->Cmp(a64::w10, 0x10000000);             // 0x1xxxxxxx range (HW regs + GS MMIO)
         armAsm->B(&eehw_do_fastmem, a64::Condition::ne);
 
         armAsm->Push(a64::x0, a64::x1, a64::x2, a64::x3);
