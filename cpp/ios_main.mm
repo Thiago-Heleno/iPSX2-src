@@ -433,50 +433,6 @@ namespace Host
                 pad->Set(PadDualshock2::Inputs::PAD_R_UP,    ry < 0 ? -ry : 0.0f);
             }
         }
-
-        // [BIOS_NAV] Auto-navigate BIOS — debug only
-#if DEBUG
-        if (const char* nav = getenv("iPSX2_BIOS_NAV"); nav && atoi(nav))
-        {
-            unsigned int fc = ::g_FrameCount;
-            auto press = [&](u32 btn, unsigned int at) {
-                if (fc >= at && fc <= at + 1) pad->Set(btn, 1.0f);
-                else if (fc == at + 2) pad->Set(btn, 0.0f);
-            };
-            // BIOS nav: ↓ → ○ → ○ → ○ → ← → ○ → ○...
-            // The exact screen order varies. Try multiple ←+○ combos.
-            press(PadDualshock2::Inputs::PAD_DOWN, 600);
-            press(PadDualshock2::Inputs::PAD_CIRCLE, 750);
-            // After entering System Configuration, each screen needs ○ to advance.
-            // The "initialization" dialog needs ← first to select "Yes".
-            // Try ← before each ○ to handle wherever the dialog appears.
-            unsigned int seq[] = {
-                950,  0,  // ○ language
-                1150, 0,  // ○ clock
-                1350, 1,  // ← then ○ (init dialog attempt 1)
-                1550, 1,  // ← then ○ (init dialog attempt 2)
-                1750, 0,  // ○
-                1950, 0,  // ○
-                2150, 1,  // ← then ○ (attempt 3)
-                2350, 0,  // ○
-                2550, 0, 2750, 0, 2950, 0, 3150, 0, 3350, 0, 3550, 0,
-            };
-            for (int i = 0; i < (int)(sizeof(seq)/sizeof(seq[0])); i += 2) {
-                unsigned int t = seq[i];
-                if (seq[i+1]) // needs LEFT first
-                    press(PadDualshock2::Inputs::PAD_LEFT, t);
-                press(PadDualshock2::Inputs::PAD_CIRCLE, t + (seq[i+1] ? 100 : 0));
-            }
-
-            // Log after each step
-            static const unsigned int cps[] = {650, 770, 950, 1130, 1300, 1500, 1800, 2100, 2400, 2700, 3000};
-            for (auto cp : cps) {
-                if (fc == cp) {
-                    Console.WriteLn(Color_Yellow, "[BIOS_NAV] checkpoint f=%u", fc);
-                }
-            }
-        }
-#endif // DEBUG — BIOS_NAV
     }
     std::string TranslatePluralToString(const char*, const char*, const char*, int) { return ""; }
     void CommitBaseSettingChanges() {}
