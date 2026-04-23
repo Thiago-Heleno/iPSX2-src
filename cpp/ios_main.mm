@@ -599,10 +599,10 @@ namespace Host
             if (s_gamepad) {
                 SDL_UpdateGamepads();
                 // Capture mode: detect any pressed button for remapping UI
-                if (s_captureMode.load()) {
+                if (GamepadMapper::captureMode.load()) {
                     for (int b = 0; b < SDL_GAMEPAD_BUTTON_COUNT; b++) {
                         if (SDL_GetGamepadButton(s_gamepad, (SDL_GamepadButton)b)) {
-                            s_capturedButton.store(b);
+                            GamepadMapper::capturedButton.store(b);
                             break;
                         }
                     }
@@ -619,7 +619,7 @@ namespace Host
                     PadDualshock2::Inputs::PAD_L3, PadDualshock2::Inputs::PAD_R3,
                 };
                 for (int i = 0; i < 16; i++) {
-                    int sdlBtn = s_buttonMap[i];
+                    int sdlBtn = GamepadMapper::GetMapping(i);
                     if (sdlBtn < 0) continue; // analog trigger
                     bool pressed = SDL_GetGamepadButton(s_gamepad, (SDL_GamepadButton)sdlBtn);
                     if (pressed)
