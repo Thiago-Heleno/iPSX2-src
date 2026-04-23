@@ -407,22 +407,20 @@ static NSDate* s_lastNVMSaveDate = nil;
 }
 
 // Gamepad button mapping
-extern std::atomic<bool> s_captureMode;
-extern std::atomic<int>  s_capturedButton;
-extern int s_buttonMap[16];
+#include "GamepadMapper.h"
 
 + (void)startButtonCapture {
-    s_capturedButton.store(-1);
-    s_captureMode.store(true);
+    GamepadMapper::capturedButton.store(-1);
+    GamepadMapper::captureMode.store(true);
 }
 
 + (void)stopButtonCapture {
-    s_captureMode.store(false);
+    GamepadMapper::captureMode.store(false);
 }
 
 // Poll SDL gamepad from main thread (for settings screen when VM is not running)
 + (void)pollGamepadForCapture {
-    if (!s_captureMode.load()) return;
+    if (!GamepadMapper::captureMode.load()) return;
     SDL_UpdateGamepads();
     // Keep gamepad open across polls to avoid open/close overhead
     static SDL_Gamepad* s_settingsGP = nullptr;
@@ -443,46 +441,33 @@ extern int s_buttonMap[16];
     SDL_UpdateGamepads();
     for (int b = 0; b < SDL_GAMEPAD_BUTTON_COUNT; b++) {
         if (SDL_GetGamepadButton(s_settingsGP, (SDL_GamepadButton)b)) {
-            s_capturedButton.store(b);
+            GamepadMapper::capturedButton.store(b);
             break;
         }
     }
 }
 
 + (int)capturedButton {
-    return s_capturedButton.exchange(-1);
+    return GamepadMapper::capturedButton.exchange(-1);
 }
 
 + (void)setButtonMapping:(int)ps2Index toSDLButton:(int)sdlButton {
-    if (ps2Index >= 0 && ps2Index < 16) {
-        s_buttonMap[ps2Index] = sdlButton;
-        // Persist to INI
-        if (g_p44_settings_interface) {
-            char key[32];
-            snprintf(key, sizeof(key), "Button%d", ps2Index);
-            g_p44_settings_interface->SetIntValue("iPSX2/GamepadMapping", key, sdlButton);
-            g_p44_settings_interface->Save();
-        }
+    GamepadMapper::SetMapping(ps2Index, sdlButton);
+    // Persist to INI
+    if (g_p44_settings_interface) {
+        char key[32];
+        snprintf(key, sizeof(key), "Button%d", ps2Index);
+        g_p44_settings_interface->SetIntValue("iPSX2/GamepadMapping", key, sdlButton);
+        g_p44_settings_interface->Save();
     }
 }
 
 + (int)getButtonMapping:(int)ps2Index {
-    if (ps2Index >= 0 && ps2Index < 16) return s_buttonMap[ps2Index];
-    return -1;
+    return GamepadMapper::GetMapping(ps2Index);
 }
 
 + (void)resetButtonMappings {
-    static const int defMap[16] = {
-        SDL_GAMEPAD_BUTTON_DPAD_UP, SDL_GAMEPAD_BUTTON_DPAD_DOWN,
-        SDL_GAMEPAD_BUTTON_DPAD_LEFT, SDL_GAMEPAD_BUTTON_DPAD_RIGHT,
-        SDL_GAMEPAD_BUTTON_SOUTH, SDL_GAMEPAD_BUTTON_EAST,
-        SDL_GAMEPAD_BUTTON_WEST, SDL_GAMEPAD_BUTTON_NORTH,
-        SDL_GAMEPAD_BUTTON_LEFT_SHOULDER, SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER,
-        -1, -1,
-        SDL_GAMEPAD_BUTTON_START, SDL_GAMEPAD_BUTTON_BACK,
-        SDL_GAMEPAD_BUTTON_LEFT_STICK, SDL_GAMEPAD_BUTTON_RIGHT_STICK,
-    };
-    for (int i = 0; i < 16; i++) s_buttonMap[i] = defMap[i];
+    GamepadMapper::ResetToDefaults();
     if (g_p44_settings_interface) {
         g_p44_settings_interface->RemoveSection("iPSX2/GamepadMapping");
         g_p44_settings_interface->Save();

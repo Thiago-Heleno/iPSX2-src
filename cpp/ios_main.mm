@@ -305,12 +305,12 @@ extern "C" bool VMController_IsStopRequested() {
 
 @end
 
-// Gamepad button mapping — 16 PS2 buttons → SDL_GamepadButton
-std::atomic<bool> s_captureMode{false};
-std::atomic<int>  s_capturedButton{-1};
+// Gamepad button mapping
+#include "GamepadMapper.h"
 
-// Default mapping: PS2 index → SDL_GamepadButton
-int s_buttonMap[16] = {
+std::atomic<bool> GamepadMapper::captureMode{false};
+std::atomic<int>  GamepadMapper::capturedButton{-1};
+int GamepadMapper::buttonMap[16] = {
     SDL_GAMEPAD_BUTTON_DPAD_UP,        // 0  PAD_UP
     SDL_GAMEPAD_BUTTON_DPAD_DOWN,      // 1  PAD_DOWN
     SDL_GAMEPAD_BUTTON_DPAD_LEFT,      // 2  PAD_LEFT
@@ -338,6 +338,22 @@ const int s_defaultMap[16] = {
     SDL_GAMEPAD_BUTTON_START, SDL_GAMEPAD_BUTTON_BACK,
     SDL_GAMEPAD_BUTTON_LEFT_STICK, SDL_GAMEPAD_BUTTON_RIGHT_STICK,
 };
+
+void GamepadMapper::ResetToDefaults() {
+    for (int i = 0; i < 16; i++) buttonMap[i] = s_defaultMap[i];
+}
+
+void GamepadMapper::SetMapping(int ps2Index, int sdlButton) {
+    if (ps2Index >= 0 && ps2Index < 16) {
+        buttonMap[ps2Index] = sdlButton;
+    }
+}
+
+int GamepadMapper::GetMapping(int ps2Index) {
+    if (ps2Index >= 0 && ps2Index < 16) return buttonMap[ps2Index];
+    return -1;
+}
+
 
 // View controller references for background color switching
 static UIViewController* __weak s_menuVC = nil;
