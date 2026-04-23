@@ -59,6 +59,8 @@ struct rc_client_t;
 #import <UIKit/UIKit.h>
 #include <mach-o/dyld.h>
 #include "common/Darwin/DarwinMisc.h" // For iPSX2_CRASH_DIAG
+#include "3rdparty/simpleini/include/SimpleIni.h"
+#include "pcsx2/INISettingsInterface.h"
 
 // Global Log View
 static UITextView* g_logView = nil;
@@ -104,6 +106,15 @@ static bool s_vmThreadCreated = false;              // guarded by s_vmMutex
 extern "C" bool VMController_IsStopRequested() {
     return s_requestVMStop.load();
 }
+
+@interface VMController : NSObject
++ (instancetype)sharedInstance;
+- (BOOL)isVMRunning;
+- (BOOL)isVMThreadActive;
+- (void)requestVMBoot;
+- (void)requestVMShutdown;
+- (void)startVMThread;
+@end
 
 @implementation VMController
 
@@ -356,8 +367,8 @@ int GamepadMapper::GetMapping(int ps2Index) {
 
 
 // View controller references for background color switching
-static UIViewController* __weak s_menuVC = nil;
-static UIViewController* __weak s_rootVC = nil;
+static UIViewController* __unsafe_unretained s_menuVC = nil;
+static UIViewController* __unsafe_unretained s_rootVC = nil;
 
 // Helper to log to screen (thread safe)
 void LogToScreen(const char* str) {
@@ -790,9 +801,6 @@ bool PCAPAdapter::ValidateEtherFrame(NetPacket*) { return false; }
 // -- End Host Stubs --
 
 // Settings Interface
-#include "3rdparty/simpleini/include/SimpleIni.h"
-#include "pcsx2/INISettingsInterface.h"
-
 static INISettingsInterface* s_settings_interface = nullptr;
 // Expose to iPSX2Bridge.mm via extern
 INISettingsInterface* g_p44_settings_interface = nullptr;
@@ -873,7 +881,7 @@ INISettingsInterface* g_p44_settings_interface = nullptr;
         for (int i = 0; i < 16; i++) {
             char key[32]; snprintf(key, sizeof(key), "Button%d", i);
             int val = s_settings_interface->GetIntValue("iPSX2/GamepadMapping", key, s_defaultMap[i]);
-            s_buttonMap[i] = val;
+            GamepadMapper::buttonMap[i] = val;
         }
     }
     // One-time migration for existing INI (runs once, then conditions are false)
