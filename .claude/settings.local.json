@@ -19,7 +19,9 @@
       "Bash(git -C \"C:/Users/tibis/OneDrive/Desktop/iPSX2-src-main\" diff)",
       "Bash(git -C \"C:/Users/tibis/OneDrive/Desktop/iPSX2-src-main\" log --oneline -5)",
       "Bash(git -C \"C:/Users/tibis/OneDrive/Desktop/iPSX2-src-main\" branch -a)",
-      "Bash(git *)"
+      "Bash(git *)",
+      "Skill(update-config)",
+      "Bash(grep -v \"extern\\\\|\\\\\\\\&jitA64Cpu\\\\|Cpu == &jitA64Cpu\\\\|jitA64Cpu\\\\\\\\.\")"
     ]
   }
 }
