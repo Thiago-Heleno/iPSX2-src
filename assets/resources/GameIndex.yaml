@@ -29873,6 +29873,8 @@ SLES-55533:
 SLES-55536:
   name: "Disney/Pixar Cars - Race-O-Rama"
   region: "PAL-M5"
+  gameFixes:
+    - SkipMPEGHack # Fixes black screen hang at boot.
   gsHWFixes:
     halfPixelOffset: 4 # Aligns post-processing.
     autoFlush: 1 # Fixes sun penetrating walls and buildings.
@@ -73858,6 +73860,8 @@ SLUS-21882:
 SLUS-21883:
   name: "Disney/Pixar Cars - Race-O-Rama"
   region: "NTSC-U"
+  gameFixes:
+    - SkipMPEGHack # Fixes black screen hang at boot.
   gsHWFixes:
     halfPixelOffset: 4 # Aligns post-processing.
     autoFlush: 1 # Fixes sun penetrating walls and buildings.
