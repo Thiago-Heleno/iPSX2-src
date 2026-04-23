@@ -122,9 +122,7 @@ static NSDate* s_lastNVMSaveDate = nil;
 }
 
 + (void)requestVMStop {
-    extern std::atomic<bool> s_requestVMStop;
-    s_requestVMStop.store(true);
-    [[NSNotificationCenter defaultCenter] postNotificationName:@"iPSX2VMDidShutdown" object:nil];
+    [[VMController sharedInstance] requestVMShutdown];
 }
 
 + (void)setFullScreen:(BOOL)enabled {
@@ -401,12 +399,11 @@ static NSDate* s_lastNVMSaveDate = nil;
 }
 
 + (void)requestVMBoot {
-    // Post notification that ios_main.mm will observe to start VM
-    [[NSNotificationCenter defaultCenter] postNotificationName:@"iPSX2RequestVMBoot" object:nil];
+    [[VMController sharedInstance] requestVMBoot];
 }
 
 + (void)requestVMShutdown {
-    [[NSNotificationCenter defaultCenter] postNotificationName:@"iPSX2RequestVMShutdown" object:nil];
+    [[VMController sharedInstance] requestVMShutdown];
 }
 
 // Gamepad button mapping

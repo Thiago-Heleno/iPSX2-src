@@ -95,11 +95,215 @@ std::atomic<bool> g_touchPadState[64] = {};
 
 // Persistent VM thread lifecycle
 static std::atomic<bool> s_vmThreadActive{false};   // true while VM is executing
-std::atomic<bool> s_requestVMStop{false};     // signal VM to stop from UI (extern for iPSX2Bridge)
-static std::atomic<bool> s_requestVMBoot{false};     // signal VM thread to boot
+static std::atomic<bool> s_requestVMStop{false};    // signal VM to stop from UI
+static std::atomic<bool> s_requestVMBoot{false};    // signal VM thread to boot
 static std::mutex s_vmMutex;
 static std::condition_variable s_vmCV;
-static bool s_vmThreadCreated = false;               // guarded by s_vmMutex
+static bool s_vmThreadCreated = false;              // guarded by s_vmMutex
+
+extern "C" bool VMController_IsStopRequested() {
+    return s_requestVMStop.load();
+}
+
+@implementation VMController
+
++ (instancetype)sharedInstance {
+    static VMController *shared = nil;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        shared = [[self alloc] init];
+    });
+    return shared;
+}
+
+- (BOOL)isVMRunning {
+    return s_vmThreadActive.load();
+}
+
+- (BOOL)isVMThreadActive {
+    return s_vmThreadActive.load();
+}
+
+- (void)requestVMBoot {
+    [[NSNotificationCenter defaultCenter] postNotificationName:@"iPSX2RequestVMBoot" object:nil];
+}
+
+- (void)requestVMShutdown {
+    s_requestVMStop.store(true);
+    [[NSNotificationCenter defaultCenter] postNotificationName:@"iPSX2RequestVMShutdown" object:nil];
+}
+
+- (void)startVMThread {
+    {
+        std::lock_guard<std::mutex> lk(s_vmMutex);
+        if (s_vmThreadActive.load()) {
+            Console.WriteLn("[VM] startVMThread: VM already active, ignoring");
+            return;
+        }
+
+        // Signal the persistent thread to boot
+        s_requestVMBoot.store(true);
+        s_requestVMStop.store(false);
+
+        if (s_vmThreadCreated) {
+            Console.WriteLn("[VM] startVMThread: signaling existing VM thread");
+            s_vmCV.notify_one();
+            return;
+        }
+
+        // First call: create the persistent thread
+        s_vmThreadCreated = true;
+    }
+
+    Console.WriteLn("[VM] Creating persistent VM thread...");
+
+    std::thread vmThread([]() {
+        // === ONE-TIME INIT (runs once per app lifetime) ===
+        Console.WriteLn("[VM] VM Thread: CPUThreadInitialize (once)...");
+        if (!VMManager::Internal::CPUThreadInitialize()) {
+            Console.Error("VM Thread: CPUThreadInitialize failed.");
+            std::lock_guard<std::mutex> lk(s_vmMutex);
+            s_vmThreadCreated = false;
+            return;
+        }
+
+        // Set ImGui font path (once)
+        std::string fontPath = Path::Combine(EmuFolders::Resources, "fonts/Roboto-Regular.ttf");
+        ImGuiManager::SetFontPathAndRange(std::move(fontPath), {});
+
+        // === PERSISTENT BOOT LOOP ===
+        bool auto_boot_first = (getenv("iPSX2_AUTO_BOOT") && atoi(getenv("iPSX2_AUTO_BOOT")) == 1)
+                            || (getenv("iPSX2_BOOT_ELF") != nullptr);
+        while (true) {
+            // Wait for boot signal (or auto-boot on first iteration)
+            {
+                std::unique_lock<std::mutex> lk(s_vmMutex);
+                if (auto_boot_first) {
+                    Console.WriteLn("[AutoBoot] @@AUTO_BOOT@@ skipping UI wait, auto-boot enabled");
+                    auto_boot_first = false;
+                } else {
+                    Console.WriteLn("[VM] VM Thread: waiting for boot request...");
+                    s_vmCV.wait(lk, [] { return s_requestVMBoot.load(); });
+                }
+                s_requestVMBoot.store(false);
+            }
+
+            Console.WriteLn("[VM] VM Thread: boot signal received, preparing boot params...");
+            s_vmThreadActive.store(true);
+
+            // --- Build boot parameters from INI ---
+            VMBootParameters boot_params;
+            boot_params.fast_boot = false;
+            {
+                std::string isoDir = EmuFolders::DataRoot + "/iso";
+                std::string defaultISO = "";
+                // Access global settings interface for configuration
+                extern INISettingsInterface* g_p44_settings_interface;
+                std::string isoFilename = "";
+                bool fastBoot = false;
+                if (g_p44_settings_interface) {
+                    isoFilename = g_p44_settings_interface->GetStringValue("GameISO", "BootISO", defaultISO.c_str());
+                    fastBoot = g_p44_settings_interface->GetBoolValue("GameISO", "FastBoot", false);
+                    g_p44_settings_interface->SetStringValue("GameISO", "BootISO", isoFilename.c_str());
+                    g_p44_settings_interface->SetBoolValue("GameISO", "FastBoot", fastBoot);
+                    g_p44_settings_interface->Save();
+                }
+                std::string isoPath = isoDir + "/" + isoFilename;
+                // Fallback: check Documents/ root if not found in iso/
+                if (!isoFilename.empty() && !FileSystem::FileExists(isoPath.c_str())) {
+                    std::string rootPath = EmuFolders::DataRoot + "/" + isoFilename;
+                    if (FileSystem::FileExists(rootPath.c_str())) {
+                        isoPath = rootPath;
+                        Console.WriteLn("ISO found in Documents/ root: %s", isoPath.c_str());
+                    }
+                }
+                if (!isoFilename.empty() && FileSystem::FileExists(isoPath.c_str())) {
+                    std::string suffix = isoFilename.size() >= 4 ? isoFilename.substr(isoFilename.size() - 4) : "";
+                    std::transform(suffix.begin(), suffix.end(), suffix.begin(), ::tolower);
+                    bool isElf = (suffix == ".elf");
+                    if (isElf) {
+                        boot_params.elf_override = isoPath;
+                        boot_params.source_type = CDVD_SourceType::NoDisc;
+                        boot_params.fast_boot = true;
+                        Console.WriteLn("@@ISO_BOOT@@ path=%s fast_boot=1 mode=ELF (INI: %s)", isoPath.c_str(), isoFilename.c_str());
+                    } else {
+                        boot_params.filename = isoPath;
+                        boot_params.source_type = CDVD_SourceType::Iso;
+                        boot_params.fast_boot = fastBoot;
+                        Console.WriteLn("@@ISO_BOOT@@ path=%s fast_boot=%d (INI: %s)", isoPath.c_str(), fastBoot ? 1 : 0, isoFilename.c_str());
+                    }
+                } else {
+                    Console.WriteLn("@@ISO_BOOT@@ no ISO='%s', falling back to BIOS only", isoFilename.c_str());
+                }
+            }
+
+            if (getenv("iPSX2_AUTO_BOOT_BIOS")) {
+                Console.WriteLn("@@AUTO_BOOT_BIOS@@ enabled=1 action=triggered");
+                boot_params.fast_boot = false;
+            }
+            // ps2autotests: boot ELF directly via env var
+            if (const char* testElf = getenv("iPSX2_BOOT_ELF")) {
+                boot_params.elf_override = testElf;
+                boot_params.source_type = CDVD_SourceType::NoDisc;
+                boot_params.fast_boot = true;
+                Console.WriteLn("@@BOOT_ELF@@ elf=%s", testElf);
+            }
+
+            // BIOS sanity check
+            if (EmuConfig.BaseFilenames.Bios.empty() || !FileSystem::FileExists(Path::Combine(EmuFolders::Bios, EmuConfig.BaseFilenames.Bios).c_str())) {
+                Console.Error("CRITICAL: BIOS verification failed inside VM thread.");
+                Host::ReportErrorAsync("BIOS Error", "Validation failed.");
+                s_vmThreadActive.store(false);
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    [[NSNotificationCenter defaultCenter] postNotificationName:@"iPSX2VMDidShutdown" object:nil];
+                });
+                continue; // back to wait loop
+            }
+
+            // --- Initialize & Execute VM ---
+            if (VMManager::Initialize(boot_params)) {
+                Console.WriteLn("[VM] VM initialized successfully");
+                VMManager::SetState(VMState::Running);
+
+                while (true) {
+                    if (VMController_IsStopRequested()) {
+                        Console.WriteLn("[VM] VM Thread: stop requested from UI.");
+                        break;
+                    }
+                    VMState state = VMManager::GetState();
+                    if (state == VMState::Stopping || state == VMState::Shutdown) {
+                        Console.WriteLn("[VM] VM Thread: shutdown signal received.");
+                        break;
+                    } else if (state == VMState::Running) {
+                        VMManager::Execute();
+                    } else {
+                        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                    }
+                }
+
+                Console.WriteLn("[VM] VM Thread: shutting down VM...");
+                VMManager::Shutdown(false);
+            } else {
+                Console.Error("VM Thread: VMManager::Initialize failed!");
+                Host::ReportErrorAsync("Startup Error", "VM Initialization Failed.");
+            }
+
+            // --- Post-shutdown: reset state, notify UI ---
+            s_vmThreadActive.store(false);
+            s_requestVMStop.store(false);
+            Console.WriteLn("[VM] VM Thread: shutdown complete, posting notification");
+            dispatch_async(dispatch_get_main_queue(), ^{
+                [[NSNotificationCenter defaultCenter] postNotificationName:@"iPSX2VMDidShutdown" object:nil];
+            });
+        } // end while(true) boot loop
+
+        // Note: CPUThreadShutdown() is never reached because the thread persists.
+        // It would only be needed if we added an app-termination signal.
+    });
+    vmThread.detach();
+}
+
+@end
 
 // Gamepad button mapping — 16 PS2 buttons → SDL_GamepadButton
 std::atomic<bool> s_captureMode{false};
@@ -315,7 +519,7 @@ namespace Host
     void PumpMessagesOnCPUThread()
     {
 // Check for VM shutdown request (safe: runs on CPU thread)
-        if (s_requestVMStop.load()) {
+        if (VMController_IsStopRequested()) {
             Console.WriteLn("[UI] PumpMessages: setting VM state to Stopping");
             VMManager::SetState(VMState::Stopping);
             return;
@@ -763,7 +967,7 @@ INISettingsInterface* g_p44_settings_interface = nullptr;
         Console.WriteLn("[UI] VM boot requested from UI (rootVC=%p)", s_rootVC);
         if (s_rootVC) s_rootVC.view.backgroundColor = [UIColor blackColor];
 #if TARGET_OS_SIMULATOR
-        [self startVMThread];
+        [[VMController sharedInstance] startVMThread];
 #else
         [self checkJITAndStartVM];
 #endif
@@ -774,7 +978,7 @@ INISettingsInterface* g_p44_settings_interface = nullptr;
                                                        queue:nil
                                                   usingBlock:^(NSNotification * _Nonnull note) {
         Console.WriteLn("[UI] VM shutdown requested from UI");
-        s_requestVMStop.store(true);
+        [[VMController sharedInstance] requestVMShutdown];
     }];
 
     // iPSX2VMDidShutdown / iPSX2ReturnToMenu: no rootVC background change needed.
@@ -822,7 +1026,7 @@ INISettingsInterface* g_p44_settings_interface = nullptr;
     // Fallback: no SwiftUI — auto-boot like before
     if (!EmuConfig.BaseFilenames.Bios.empty() && FileSystem::FileExists(Path::Combine(EmuFolders::Bios, EmuConfig.BaseFilenames.Bios).c_str())) {
 #if TARGET_OS_SIMULATOR
-        [self startVMThread];
+        [[VMController sharedInstance] startVMThread];
 #else
         [self checkJITAndStartVM];
 #endif
@@ -1034,7 +1238,7 @@ INISettingsInterface* g_p44_settings_interface = nullptr;
         });
         
 #if TARGET_OS_SIMULATOR
-        [self startVMThread];
+        [[VMController sharedInstance] startVMThread];
 #else
         [self checkJITAndStartVM];
 #endif
@@ -1051,182 +1255,20 @@ INISettingsInterface* g_p44_settings_interface = nullptr;
 #if !TARGET_OS_SIMULATOR
     if (DarwinMisc::IsJITAvailable()) {
         Console.WriteLn("@@JIT_GATE@@ JIT available — starting VM in JIT mode");
-        [self startVMThread];
+        [[VMController sharedInstance] startVMThread];
         return;
     }
 
     Console.Warning("@@JIT_GATE@@ JIT NOT available — falling back to Interpreter mode");
     DarwinMisc::iPSX2_FORCE_EE_INTERP = 1;
     Console.WriteLn("@@JIT_GATE@@ iPSX2_FORCE_EE_INTERP forced to 1");
-    [self startVMThread];
+    [[VMController sharedInstance] startVMThread];
 #else
-    [self startVMThread];
+    [[VMController sharedInstance] startVMThread];
 #endif
 }
 
-- (void)startVMThread {
-    {
-        std::lock_guard<std::mutex> lk(s_vmMutex);
-        if (s_vmThreadActive.load()) {
-            Console.WriteLn("[VM] startVMThread: VM already active, ignoring");
-            return;
-        }
 
-        // Signal the persistent thread to boot
-        s_requestVMBoot.store(true);
-        s_requestVMStop.store(false);
-
-        if (s_vmThreadCreated) {
-            Console.WriteLn("[VM] startVMThread: signaling existing VM thread");
-            s_vmCV.notify_one();
-            return;
-        }
-
-        // First call: create the persistent thread
-        s_vmThreadCreated = true;
-    }
-
-    Console.WriteLn("[VM] Creating persistent VM thread...");
-
-    std::thread vmThread([]() {
-        // === ONE-TIME INIT (runs once per app lifetime) ===
-        Console.WriteLn("[VM] VM Thread: CPUThreadInitialize (once)...");
-        if (!VMManager::Internal::CPUThreadInitialize()) {
-            Console.Error("VM Thread: CPUThreadInitialize failed.");
-            std::lock_guard<std::mutex> lk(s_vmMutex);
-            s_vmThreadCreated = false;
-            return;
-        }
-
-        // Set ImGui font path (once)
-        std::string fontPath = Path::Combine(EmuFolders::Resources, "fonts/Roboto-Regular.ttf");
-        ImGuiManager::SetFontPathAndRange(std::move(fontPath), {});
-
-        // === PERSISTENT BOOT LOOP ===
-        bool auto_boot_first = (getenv("iPSX2_AUTO_BOOT") && atoi(getenv("iPSX2_AUTO_BOOT")) == 1)
-                            || (getenv("iPSX2_BOOT_ELF") != nullptr);
-        while (true) {
-            // Wait for boot signal (or auto-boot on first iteration)
-            {
-                std::unique_lock<std::mutex> lk(s_vmMutex);
-                if (auto_boot_first) {
-                    Console.WriteLn("[AutoBoot] @@AUTO_BOOT@@ skipping UI wait, auto-boot enabled");
-                    auto_boot_first = false;
-                } else {
-                    Console.WriteLn("[VM] VM Thread: waiting for boot request...");
-                    s_vmCV.wait(lk, [] { return s_requestVMBoot.load(); });
-                }
-                s_requestVMBoot.store(false);
-            }
-
-            Console.WriteLn("[VM] VM Thread: boot signal received, preparing boot params...");
-            s_vmThreadActive.store(true);
-
-            // --- Build boot parameters from INI ---
-            VMBootParameters boot_params;
-            boot_params.fast_boot = false;
-            {
-                std::string isoDir = EmuFolders::DataRoot + "/iso";
-                std::string defaultISO = "";
-                std::string isoFilename = s_settings_interface->GetStringValue("GameISO", "BootISO", defaultISO.c_str());
-                bool fastBoot = s_settings_interface->GetBoolValue("GameISO", "FastBoot", false);
-                s_settings_interface->SetStringValue("GameISO", "BootISO", isoFilename.c_str());
-                s_settings_interface->SetBoolValue("GameISO", "FastBoot", fastBoot);
-                s_settings_interface->Save();
-                std::string isoPath = isoDir + "/" + isoFilename;
-                // Fallback: check Documents/ root if not found in iso/
-                if (!isoFilename.empty() && !FileSystem::FileExists(isoPath.c_str())) {
-                    std::string rootPath = EmuFolders::DataRoot + "/" + isoFilename;
-                    if (FileSystem::FileExists(rootPath.c_str())) {
-                        isoPath = rootPath;
-                        Console.WriteLn("ISO found in Documents/ root: %s", isoPath.c_str());
-                    }
-                }
-                if (!isoFilename.empty() && FileSystem::FileExists(isoPath.c_str())) {
-                    std::string suffix = isoFilename.size() >= 4 ? isoFilename.substr(isoFilename.size() - 4) : "";
-                    std::transform(suffix.begin(), suffix.end(), suffix.begin(), ::tolower);
-                    bool isElf = (suffix == ".elf");
-                    if (isElf) {
-                        boot_params.elf_override = isoPath;
-                        boot_params.source_type = CDVD_SourceType::NoDisc;
-                        boot_params.fast_boot = true;
-                        Console.WriteLn("@@ISO_BOOT@@ path=%s fast_boot=1 mode=ELF (INI: %s)", isoPath.c_str(), isoFilename.c_str());
-                    } else {
-                        boot_params.filename = isoPath;
-                        boot_params.source_type = CDVD_SourceType::Iso;
-                        boot_params.fast_boot = fastBoot;
-                        Console.WriteLn("@@ISO_BOOT@@ path=%s fast_boot=%d (INI: %s)", isoPath.c_str(), fastBoot ? 1 : 0, isoFilename.c_str());
-                    }
-                } else {
-                    Console.WriteLn("@@ISO_BOOT@@ no ISO='%s', falling back to BIOS only", isoFilename.c_str());
-                }
-            }
-
-            if (getenv("iPSX2_AUTO_BOOT_BIOS")) {
-                Console.WriteLn("@@AUTO_BOOT_BIOS@@ enabled=1 action=triggered");
-                boot_params.fast_boot = false;
-            }
-            // ps2autotests: boot ELF directly via env var
-            if (const char* testElf = getenv("iPSX2_BOOT_ELF")) {
-                boot_params.elf_override = testElf;
-                boot_params.source_type = CDVD_SourceType::NoDisc;
-                boot_params.fast_boot = true;
-                Console.WriteLn("@@BOOT_ELF@@ elf=%s", testElf);
-            }
-
-            // BIOS sanity check
-            if (EmuConfig.BaseFilenames.Bios.empty() || !FileSystem::FileExists(Path::Combine(EmuFolders::Bios, EmuConfig.BaseFilenames.Bios).c_str())) {
-                Console.Error("CRITICAL: BIOS verification failed inside VM thread.");
-                Host::ReportErrorAsync("BIOS Error", "Validation failed.");
-                s_vmThreadActive.store(false);
-                dispatch_async(dispatch_get_main_queue(), ^{
-                    [[NSNotificationCenter defaultCenter] postNotificationName:@"iPSX2VMDidShutdown" object:nil];
-                });
-                continue; // back to wait loop
-            }
-
-            // --- Initialize & Execute VM ---
-            if (VMManager::Initialize(boot_params)) {
-                Console.WriteLn("[VM] VM initialized successfully");
-                VMManager::SetState(VMState::Running);
-
-                while (true) {
-                    if (s_requestVMStop.load()) {
-                        Console.WriteLn("[VM] VM Thread: stop requested from UI.");
-                        break;
-                    }
-                    VMState state = VMManager::GetState();
-                    if (state == VMState::Stopping || state == VMState::Shutdown) {
-                        Console.WriteLn("[VM] VM Thread: shutdown signal received.");
-                        break;
-                    } else if (state == VMState::Running) {
-                        VMManager::Execute();
-                    } else {
-                        std::this_thread::sleep_for(std::chrono::milliseconds(10));
-                    }
-                }
-
-                Console.WriteLn("[VM] VM Thread: shutting down VM...");
-                VMManager::Shutdown(false);
-            } else {
-                Console.Error("VM Thread: VMManager::Initialize failed!");
-                Host::ReportErrorAsync("Startup Error", "VM Initialization Failed.");
-            }
-
-            // --- Post-shutdown: reset state, notify UI ---
-            s_vmThreadActive.store(false);
-            s_requestVMStop.store(false);
-            Console.WriteLn("[VM] VM Thread: shutdown complete, posting notification");
-            dispatch_async(dispatch_get_main_queue(), ^{
-                [[NSNotificationCenter defaultCenter] postNotificationName:@"iPSX2VMDidShutdown" object:nil];
-            });
-        } // end while(true) boot loop
-
-        // Note: CPUThreadShutdown() is never reached because the thread persists.
-        // It would only be needed if we added an app-termination signal.
-    });
-    vmThread.detach();
-}
 
 - (void)sceneDidDisconnect:(UIScene *)scene {
 }

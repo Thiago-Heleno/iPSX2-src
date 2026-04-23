@@ -36,6 +36,15 @@ typedef NS_ENUM(NSInteger, iPSX2PadButton) {
     iPSX2PadButtonR3,
 };
 
+@interface VMController : NSObject
++ (instancetype)sharedInstance;
+- (void)startVMThread;
+- (void)requestVMBoot;
+- (void)requestVMShutdown;
+@property (nonatomic, readonly) BOOL isVMRunning;
+@property (nonatomic, readonly) BOOL isVMThreadActive;
+@end
+
 @interface iPSX2Bridge : NSObject
 
 // Game render view (for UIViewRepresentable)
