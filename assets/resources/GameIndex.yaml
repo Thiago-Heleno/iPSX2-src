@@ -11620,28 +11620,6 @@ SCUS-97268:
   name: "Ratchet & Clank 2 - Going Commando"
   region: "NTSC-U"
   compat: 5
-  roundModes:
-    eeRoundMode: 0 # Nearest fixes accumulating FP error in camera/physics math.
-    vuRoundMode: 0 # Nearest required for VU1-driven geometry; Chop causes camera drift.
-  clampModes:
-    eeClampMode: 3 # Full clamping fixes camera/matrix transform errors from non-IEEE FP math.
-    vuClampMode: 3 # Extra+Preserve Sign prevents SPS and VU1 geometry corruption.
-  gameFixes:
-    - EETimingHack # Fixes SPR errors while going in-game.
-    - VuAddSub # Syncs VU0/VU1 add-sub pipeline; prevents stale ClipFlag reads (COP2 cfc2 hazard).
-  gsHWFixes:
-    mipmap: 2 # Full mipmapping required for correct terrain/distance LOD; Basic (1) leaves corrupted ground textures.
-    autoFlush: 2
-    halfPixelOffset: 4 # Aligns post bloom.
-    nativeScaling: 1 # Fixes light blooms.
-  dynaPatches:
-    - pattern:
-        - { offset: 0x0, value: 0x0280202d }
-        - { offset: 0x4, value: 0x3c0140d0 }
-        - { offset: 0x8, value: 0x44810800 }
-        - { offset: 0x10, value: 0x46000836 }
-      replacement:
-        - { offset: 0x4, value: 0x3c013f80 } # Fix space view transform: 6.5f -> 1.0f (ported from SCES-51607).
   memcardFilters:
     - "SCUS-97268"
     - "SCUS-97199"
