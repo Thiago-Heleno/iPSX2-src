@@ -136,8 +136,8 @@ const int s_defaultMap[16] = {
 };
 
 // View controller references for background color switching
-static UIViewController* __unsafe_unretained s_menuVC = nil;
-static UIViewController* __unsafe_unretained s_rootVC = nil;
+static UIViewController* __weak s_menuVC = nil;
+static UIViewController* __weak s_rootVC = nil;
 
 // Helper to log to screen (thread safe)
 void LogToScreen(const char* str) {
