@@ -284,6 +284,18 @@ namespace Host
     void ReportInfoAsync(std::string_view, std::string_view) {}
     void ReportErrorAsync(std::string_view title, std::string_view msg) {
         Console.Error("Host::ReportErrorAsync: %s - %s", std::string(title).c_str(), std::string(msg).c_str());
+        NSString *nsTitle = [NSString stringWithUTF8String:std::string(title).c_str()];
+        NSString *nsMsg = [NSString stringWithUTF8String:std::string(msg).c_str()];
+        
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if (s_rootVC) {
+                UIAlertController *alert = [UIAlertController alertControllerWithTitle:nsTitle
+                                                                               message:nsMsg
+                                                                        preferredStyle:UIAlertControllerStyleAlert];
+                [alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
+                [s_rootVC presentViewController:alert animated:YES completion:nil];
+            }
+        });
     }
     void OnSaveStateSaved(std::string_view) {}
     void OnSaveStateLoaded(std::string_view, bool) {}
