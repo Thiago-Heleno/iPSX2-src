@@ -519,13 +519,14 @@ namespace Host
         NSString *nsMsg = [NSString stringWithUTF8String:std::string(msg).c_str()];
         
         dispatch_async(dispatch_get_main_queue(), ^{
-            if (s_rootVC) {
-                UIAlertController *alert = [UIAlertController alertControllerWithTitle:nsTitle
-                                                                               message:nsMsg
-                                                                        preferredStyle:UIAlertControllerStyleAlert];
-                [alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
-                [s_rootVC presentViewController:alert animated:YES completion:nil];
-            }
+            // Re-read on main thread — s_rootVC is only ever set on main thread.
+            UIViewController* vc = s_rootVC;
+            if (!vc) return;
+            UIAlertController *alert = [UIAlertController alertControllerWithTitle:nsTitle
+                                                                           message:nsMsg
+                                                                    preferredStyle:UIAlertControllerStyleAlert];
+            [alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
+            [vc presentViewController:alert animated:YES completion:nil];
         });
     }
     void OnSaveStateSaved(std::string_view) {}
@@ -1090,16 +1091,24 @@ INISettingsInterface* g_p44_settings_interface = nullptr;
             if (std::string(envBios) != destPath) {
                 FILE *src = fopen(envBios, "rb");
                 FILE *dst = fopen(destPath.c_str(), "wb");
+                bool copyOk = true;
                 if (src && dst) {
-                     char buffer[4096];
-                     size_t bytes;
-                     while ((bytes = fread(buffer, 1, 4096, src)) > 0) fwrite(buffer, 1, bytes, dst);
-                     fclose(src); fclose(dst);
-                     Console.WriteLn("Copied env-var BIOS to: %s", destPath.c_str());
+                    char buffer[4096];
+                    size_t bytes;
+                    while ((bytes = fread(buffer, 1, 4096, src)) > 0) {
+                        if (fwrite(buffer, 1, bytes, dst) != bytes) { copyOk = false; break; }
+                    }
+                    fclose(src); fclose(dst);
+                    if (!copyOk) {
+                        Console.Error("[BIOS] Copy failed (disk full?): %s -> %s", envBios, destPath.c_str());
+                        std::remove(destPath.c_str());
+                    } else {
+                        Console.WriteLn("Copied env-var BIOS to: %s", destPath.c_str());
+                    }
                 } else {
-                     Console.Error("Failed to copy env-var BIOS. src=%p dst=%p", src, dst);
-                     if (src) fclose(src);
-                     if (dst) fclose(dst);
+                    Console.Error("Failed to copy env-var BIOS. src=%p dst=%p", src, dst);
+                    if (src) fclose(src);
+                    if (dst) fclose(dst);
                 }
             }
             
@@ -1185,8 +1194,19 @@ INISettingsInterface* g_p44_settings_interface = nullptr;
                  std::string src = bfDir + "/" + fd.FileName;
                  std::string dst = biosDir + "/" + fd.FileName;
                  FILE *s=fopen(src.c_str(),"rb"), *d=fopen(dst.c_str(),"wb");
-                 if(s && d) { char b[4096]; size_t n; while((n=fread(b,1,4096,s))>0) fwrite(b,1,n,d); }
-                 if(s) fclose(s); if(d) fclose(d);
+                 bool copyOk2 = true;
+                 if (s && d) {
+                     char b[4096]; size_t n;
+                     while ((n = fread(b, 1, 4096, s)) > 0) {
+                         if (fwrite(b, 1, n, d) != n) { copyOk2 = false; break; }
+                     }
+                 }
+                 if (s) fclose(s);
+                 if (d) fclose(d);
+                 if (!copyOk2) {
+                     Console.Error("[BIOS] BiosFiles bundle copy failed");
+                     continue;
+                 }
                  EmuConfig.BaseFilenames.Bios = fd.FileName;
                  return;
              }
@@ -1204,17 +1224,24 @@ INISettingsInterface* g_p44_settings_interface = nullptr;
 
                  FILE *src = fopen(srcPath.c_str(), "rb");
                  FILE *dst = fopen(destPath.c_str(), "wb");
+                 bool copyOk3 = true;
                  if (src && dst) {
                      char buffer[4096];
                      size_t bytes;
-                     while ((bytes = fread(buffer, 1, 4096, src)) > 0) fwrite(buffer, 1, bytes, dst);
-                     fclose(src); fclose(dst);
+                     while ((bytes = fread(buffer, 1, 4096, src)) > 0) {
+                         if (fwrite(buffer, 1, bytes, dst) != bytes) { copyOk3 = false; break; }
+                     }
+                 }
+                 if (src) fclose(src);
+                 if (dst) fclose(dst);
+                 if (copyOk3 && src && dst) {
                      EmuConfig.BaseFilenames.Bios = fd.FileName;
                      Console.WriteLn("Copy and set successful.");
                      return;
+                 } else if (!copyOk3) {
+                     Console.Error("[BIOS] Bundle copy failed (disk full?)");
+                     std::remove(destPath.c_str());
                  }
-                 if(src) fclose(src);
-                 if(dst) fclose(dst);
              }
         }
     }
@@ -1295,6 +1322,8 @@ INISettingsInterface* g_p44_settings_interface = nullptr;
 
 
 - (void)sceneDidDisconnect:(UIScene *)scene {
+    s_menuVC = nil;
+    s_rootVC = nil;
 }
 
 - (void)sceneDidBecomeActive:(UIScene *)scene {
