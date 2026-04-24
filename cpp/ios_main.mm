@@ -103,6 +103,7 @@ static std::mutex s_vmMutex;
 static std::condition_variable s_vmCV;
 static std::atomic<bool> s_vmThreadCreated{false};
 static std::atomic<bool> s_requestAppExit{false};
+std::mutex g_settingsMutex;
 
 extern "C" bool VMController_IsStopRequested() {
     return s_requestVMStop.load();
@@ -210,14 +211,18 @@ extern "C" bool VMController_IsStopRequested() {
                 std::string defaultISO = "";
                 // Access global settings interface for configuration
                 extern INISettingsInterface* g_p44_settings_interface;
+                extern std::mutex g_settingsMutex;
                 std::string isoFilename = "";
                 bool fastBoot = false;
-                if (g_p44_settings_interface) {
-                    isoFilename = g_p44_settings_interface->GetStringValue("GameISO", "BootISO", defaultISO.c_str());
-                    fastBoot = g_p44_settings_interface->GetBoolValue("GameISO", "FastBoot", false);
-                    g_p44_settings_interface->SetStringValue("GameISO", "BootISO", isoFilename.c_str());
-                    g_p44_settings_interface->SetBoolValue("GameISO", "FastBoot", fastBoot);
-                    g_p44_settings_interface->Save();
+                {
+                    std::lock_guard<std::mutex> lk(g_settingsMutex);
+                    if (g_p44_settings_interface) {
+                        isoFilename = g_p44_settings_interface->GetStringValue("GameISO", "BootISO", defaultISO.c_str());
+                        fastBoot = g_p44_settings_interface->GetBoolValue("GameISO", "FastBoot", false);
+                        g_p44_settings_interface->SetStringValue("GameISO", "BootISO", isoFilename.c_str());
+                        g_p44_settings_interface->SetBoolValue("GameISO", "FastBoot", fastBoot);
+                        g_p44_settings_interface->Save();
+                    }
                 }
                 std::string isoPath = isoDir + "/" + isoFilename;
                 // Fallback: check Documents/ root if not found in iso/

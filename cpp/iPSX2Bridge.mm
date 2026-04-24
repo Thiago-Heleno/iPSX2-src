@@ -3,6 +3,7 @@
 
 #import "iPSX2Bridge.h"
 #include <atomic>
+#include <mutex>
 #include <SDL3/SDL.h>
 
 extern "C" void iPSX2_SetSDLFullscreen(bool enabled);
@@ -19,6 +20,7 @@ extern "C" void iPSX2_SetSDLFullscreen(bool enabled);
 
 // Access the global settings interface from ios_main.mm
 extern INISettingsInterface* g_p44_settings_interface;
+extern std::mutex g_settingsMutex;
 
 static NSDate* s_lastNVMSaveDate = nil;
 
@@ -135,31 +137,11 @@ static NSDate* s_lastNVMSaveDate = nil;
 }
 
 + (nullable NSString *)currentISOPath {
-    NSString *docsPath = [NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES) firstObject];
-    NSString *iniPath = [docsPath stringByAppendingPathComponent:@"PCSX2-iOS.ini"];
-    // Read BootISO from INI
-    FILE *f = fopen(iniPath.UTF8String, "r");
-    if (!f) return nil;
-    char line[512];
-    bool inSection = false;
-    NSString *result = nil;
-    while (fgets(line, sizeof(line), f)) {
-        if (strstr(line, "[GameISO]")) { inSection = true; continue; }
-        if (line[0] == '[') { inSection = false; continue; }
-        if (inSection && strstr(line, "BootISO")) {
-            char *eq = strchr(line, '=');
-            if (eq) {
-                eq++;
-                while (*eq == ' ') eq++;
-                // Remove trailing newline
-                char *nl = strchr(eq, '\n'); if (nl) *nl = 0;
-                char *cr = strchr(eq, '\r'); if (cr) *cr = 0;
-                if (strlen(eq) > 0) result = [NSString stringWithUTF8String:eq];
-            }
-        }
-    }
-    fclose(f);
-    return result;
+    std::lock_guard<std::mutex> lk(g_settingsMutex);
+    if (!g_p44_settings_interface) return nil;
+    std::string val = g_p44_settings_interface->GetStringValue("GameISO", "BootISO", "");
+    if (val.empty()) return nil;
+    return [NSString stringWithUTF8String:val.c_str()];
 }
 
 + (nonnull NSString *)isoDirectory {
@@ -268,6 +250,7 @@ static NSDate* s_lastNVMSaveDate = nil;
 #pragma mark - ISO boot
 
 + (void)bootISO:(nonnull NSString *)isoName {
+    std::lock_guard<std::mutex> lk(g_settingsMutex);
     if (!g_p44_settings_interface) return;
     g_p44_settings_interface->SetStringValue("GameISO", "BootISO", isoName.UTF8String);
     g_p44_settings_interface->Save();
@@ -312,12 +295,14 @@ static NSDate* s_lastNVMSaveDate = nil;
 }
 
 + (nonnull NSString *)defaultBIOSName {
+    std::lock_guard<std::mutex> lk(g_settingsMutex);
     if (!g_p44_settings_interface) return @"";
     std::string val = g_p44_settings_interface->GetStringValue("Filenames", "BIOS", "");
     return [NSString stringWithUTF8String:val.c_str()];
 }
 
 + (void)setDefaultBIOS:(nonnull NSString *)biosName {
+    std::lock_guard<std::mutex> lk(g_settingsMutex);
     if (!g_p44_settings_interface) return;
     g_p44_settings_interface->SetStringValue("Filenames", "BIOS", biosName.UTF8String);
     g_p44_settings_interface->Save();
@@ -328,11 +313,13 @@ static NSDate* s_lastNVMSaveDate = nil;
 #pragma mark - Favorites
 
 + (BOOL)isFavorite:(nonnull NSString *)isoName {
+    std::lock_guard<std::mutex> lk(g_settingsMutex);
     if (!g_p44_settings_interface) return NO;
     return g_p44_settings_interface->GetBoolValue("Favorites", isoName.UTF8String, false);
 }
 
 + (void)setFavorite:(nonnull NSString *)isoName favorite:(BOOL)favorite {
+    std::lock_guard<std::mutex> lk(g_settingsMutex);
     if (!g_p44_settings_interface) return;
     g_p44_settings_interface->SetBoolValue("Favorites", isoName.UTF8String, favorite);
     g_p44_settings_interface->Save();
@@ -341,45 +328,53 @@ static NSDate* s_lastNVMSaveDate = nil;
 #pragma mark - INI generic getter/setter
 
 + (int)getINIInt:(nonnull NSString *)section key:(nonnull NSString *)key defaultValue:(int)def {
+    std::lock_guard<std::mutex> lk(g_settingsMutex);
     if (!g_p44_settings_interface) return def;
     return g_p44_settings_interface->GetIntValue(section.UTF8String, key.UTF8String, def);
 }
 
 + (BOOL)getINIBool:(nonnull NSString *)section key:(nonnull NSString *)key defaultValue:(BOOL)def {
+    std::lock_guard<std::mutex> lk(g_settingsMutex);
     if (!g_p44_settings_interface) return def;
     return g_p44_settings_interface->GetBoolValue(section.UTF8String, key.UTF8String, def);
 }
 
 + (float)getINIFloat:(nonnull NSString *)section key:(nonnull NSString *)key defaultValue:(float)def {
+    std::lock_guard<std::mutex> lk(g_settingsMutex);
     if (!g_p44_settings_interface) return def;
     return g_p44_settings_interface->GetFloatValue(section.UTF8String, key.UTF8String, def);
 }
 
 + (nonnull NSString *)getINIString:(nonnull NSString *)section key:(nonnull NSString *)key defaultValue:(nonnull NSString *)def {
+    std::lock_guard<std::mutex> lk(g_settingsMutex);
     if (!g_p44_settings_interface) return def;
     std::string val = g_p44_settings_interface->GetStringValue(section.UTF8String, key.UTF8String, def.UTF8String);
     return [NSString stringWithUTF8String:val.c_str()];
 }
 
 + (void)setINIInt:(nonnull NSString *)section key:(nonnull NSString *)key value:(int)value {
+    std::lock_guard<std::mutex> lk(g_settingsMutex);
     if (!g_p44_settings_interface) return;
     g_p44_settings_interface->SetIntValue(section.UTF8String, key.UTF8String, value);
     g_p44_settings_interface->Save();
 }
 
 + (void)setINIBool:(nonnull NSString *)section key:(nonnull NSString *)key value:(BOOL)value {
+    std::lock_guard<std::mutex> lk(g_settingsMutex);
     if (!g_p44_settings_interface) return;
     g_p44_settings_interface->SetBoolValue(section.UTF8String, key.UTF8String, value);
     g_p44_settings_interface->Save();
 }
 
 + (void)setINIFloat:(nonnull NSString *)section key:(nonnull NSString *)key value:(float)value {
+    std::lock_guard<std::mutex> lk(g_settingsMutex);
     if (!g_p44_settings_interface) return;
     g_p44_settings_interface->SetFloatValue(section.UTF8String, key.UTF8String, value);
     g_p44_settings_interface->Save();
 }
 
 + (void)setINIString:(nonnull NSString *)section key:(nonnull NSString *)key value:(nonnull NSString *)value {
+    std::lock_guard<std::mutex> lk(g_settingsMutex);
     if (!g_p44_settings_interface) return;
     g_p44_settings_interface->SetStringValue(section.UTF8String, key.UTF8String, value.UTF8String);
     g_p44_settings_interface->Save();
@@ -454,6 +449,7 @@ static NSDate* s_lastNVMSaveDate = nil;
 + (void)setButtonMapping:(int)ps2Index toSDLButton:(int)sdlButton {
     GamepadMapper::SetMapping(ps2Index, sdlButton);
     // Persist to INI
+    std::lock_guard<std::mutex> lk(g_settingsMutex);
     if (g_p44_settings_interface) {
         char key[32];
         snprintf(key, sizeof(key), "Button%d", ps2Index);
@@ -468,6 +464,7 @@ static NSDate* s_lastNVMSaveDate = nil;
 
 + (void)resetButtonMappings {
     GamepadMapper::ResetToDefaults();
+    std::lock_guard<std::mutex> lk(g_settingsMutex);
     if (g_p44_settings_interface) {
         g_p44_settings_interface->RemoveSection("iPSX2/GamepadMapping");
         g_p44_settings_interface->Save();
