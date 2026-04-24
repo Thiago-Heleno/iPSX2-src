@@ -16,9 +16,11 @@
 #include <cstdlib>
 #include <unistd.h>
 #include <sys/mman.h>
-#include <sys/time.h> // [TEMP_DIAG] @@EVENTTEST_STUCK@@
-#include <mach/mach.h> // [TEMP_DIAG] @@THREAD_PC@@ for thread_get_state
-#include <dlfcn.h>     // [TEMP_DIAG] @@THREAD_PC@@ for dladdr
+#if iPSX2_ENABLE_TEMP_DIAG
+#include <sys/time.h>
+#include <mach/mach.h>
+#include <dlfcn.h>
+#endif
 #include "R5900OpcodeTables.h"
 #include "VMManager.h"
 #include "vtlb.h"
@@ -88,6 +90,12 @@ extern "C" void LogUnified(const char* fmt, ...);
 #define iPSX2_ENABLE_LOADFILE_TRACE 0  // Disabled by default
 #endif
 
+// Set to 1 to enable session-specific diagnostic instrumentation.
+// MUST be 0 in production builds.
+#ifndef iPSX2_ENABLE_TEMP_DIAG
+#define iPSX2_ENABLE_TEMP_DIAG 0
+#endif
+
 static DynamicHeapArray<u8, 4096> recRAMCopy;
 static DynamicHeapArray<u8, 4096> recLutReserve_RAM;
 static size_t recLutSize;
@@ -104,6 +112,7 @@ static u8* recPtrEnd = nullptr;
 EEINST* s_pInstCache = nullptr;
 static u32 s_nInstCacheSize = 0;
 
+#if iPSX2_ENABLE_TEMP_DIAG
 // [TEMP_DIAG] @@JIT_PERF_COUNTERS@@ — per-vsync compile/recCall counts
 // Removal condition: JIT performance issue resolved
 std::atomic<uint32_t> s_jit_compile_count{0};  // blocks compiled since last report
@@ -116,8 +125,10 @@ std::atomic<uint32_t> s_jit_cache_clear_count{0}; // recCACHE_ClearBlock calls s
 #include <unordered_set>
 static std::unordered_map<u32, uint16_t> s_compile_pc_freq;  // HWADDR(startpc) → count this window
 static std::unordered_map<u32, uint16_t> s_compile_vpc_freq; // virtual startpc → count this window
+#if iPSX2_ENABLE_TEMP_DIAG
 // [TEMP_DIAG] @@PERSISTENT_SET@@ — track all compiled VPCs across reset cycle
 static std::unordered_set<u32> s_ever_compiled_vpcs;
+#endif // iPSX2_ENABLE_TEMP_DIAG
 static uint32_t s_recompile_of_known = 0; // # times a known-compiled VPC is compiled again
 static uint64_t s_compile_guest_insns = 0;   // total guest instructions compiled
 static uint64_t s_compile_native_bytes = 0;  // total ARM64 bytes emitted
@@ -144,6 +155,7 @@ extern std::atomic<uint32_t> g_mmap_clear_page_top;
 extern std::atomic<uint32_t> g_mmap_clear_page_top_count;
 // [TEMP_DIAG] @@STUB_GUARD@@ — counter from Counters.cpp OSDSYS_FULL_GUARD path
 extern std::atomic<uint32_t> g_stub_guard_clear_count;
+#endif // iPSX2_ENABLE_TEMP_DIAG
 
 static BASEBLOCK* s_pCurBlock = nullptr;
 static BASEBLOCKEX* s_pCurBlockEx = nullptr;
@@ -545,7 +557,9 @@ void recBranchCall(void (*func)())
 
 void recCall(void (*func)())
 {
+#if iPSX2_ENABLE_TEMP_DIAG
 	s_jit_reccall_count.fetch_add(1, std::memory_order_relaxed); // [TEMP_DIAG] compile-time count
+#endif
 	iFlushCall(FLUSH_INTERPRETER);
     armEmitCall(reinterpret_cast<void*>(func));
 }
@@ -582,6 +596,7 @@ void recBREAK()
 //  R5900 Dispatchers
 // =====================================================================================================
 
+#if iPSX2_ENABLE_TEMP_DIAG
 // [TEMP_DIAG] @@DSLL_LOOP_PROBE@@ — log registers at DSLL loop (0x2659f0)
 // Removal condition: ギャップcauseafter identified
 void dsll_loop_probe()
@@ -601,6 +616,7 @@ void dsll_loop_probe()
 		s_n++;
 	}
 }
+#endif // iPSX2_ENABLE_TEMP_DIAG
 
 // [iter90] @@JAL_83860@@ — JAL 0x83860 の引数・戻り値キャプチャ用probefunction
 // Removal condition: SYSCALL loop (0x82064/0x82080) root cause確定時
@@ -664,8 +680,10 @@ static bool IsDispatchNegL1SlowpathEnabled()
 }
 
 extern uint g_FrameCount; // forward decl for EVENTTEST_STUCK probe
+#if iPSX2_ENABLE_TEMP_DIAG
 // [TEMP_DIAG] @@EVENTTEST_CNT@@ atomic counter to track recEventTest calls from watchdog
 static std::atomic<uint64_t> s_recEventTest_cnt{0};
+#endif // iPSX2_ENABLE_TEMP_DIAG
 
 // [REMOVED] BlockWatchpoint220A8 — removed after SDL/SDR JIT bug confirmed as root cause
 // of "bd file open failed" corruption. See recSDL/recSDR interpreter fallback fix.
@@ -843,7 +861,9 @@ static void BlockWatchpoint220A8(u32 blockpc)
 
 static void recEventTest()
 {
+#if iPSX2_ENABLE_TEMP_DIAG
 	s_recEventTest_cnt.fetch_add(1, std::memory_order_relaxed);
+#endif // iPSX2_ENABLE_TEMP_DIAG
 
 	_cpuEventTest_Shared();
 
@@ -916,6 +936,7 @@ extern "C" uint64_t recDispatchResolve(u32 pc);
 extern "C" void intExecuteInstruction();
 extern "C" void interpExecBiosBlock();  // [iter222] BIOS ROM partial interpreter
 
+#if iPSX2_ENABLE_TEMP_DIAG
 // [TEMP_DIAG] @@FPU_DIAG@@ Dump FPU registers at buggy block entry for JIT vs Interpreter comparison
 // Removal condition: JIT FPU bug in blocks 0x219760/0x2197c4 identified and fixed
 extern "C" void fpuDiagDump()
@@ -929,6 +950,7 @@ extern "C" void fpuDiagDump()
 		fpuRegs.fpr[0].UL, fpuRegs.fpr[1].UL, fpuRegs.fpr[2].UL,
 		fpuRegs.fpr[20].UL, fpuRegs.fpr[21].UL, fpuRegs.fprc[31]);
 }
+#endif // iPSX2_ENABLE_TEMP_DIAG
 extern "C" void recLogDispatcherWithTarget(u64 pc, u64 target);
 extern "C" void recLogEventHit(u32 pc, s32 cycle);
 extern "C" void recLogDispPcDiag(u32 reg_pc, u32 mem_pc, u64 target);
@@ -962,10 +984,12 @@ extern "C" void recLogDispatcherPc(u32 pc_val, u32 ra_val, u32 code_val, u32 sp_
 	s_count++;
 }
 
+#if iPSX2_ENABLE_TEMP_DIAG
 // [TEMP_DIAG] @@DISPATCH_CNT@@ track recDispatchResolve calls
 static std::atomic<uint64_t> s_dispatchResolve_cnt{0};
 // [TEMP_DIAG] @@RECOMPILE_CNT@@ track recRecompile calls
 static std::atomic<uint64_t> s_recompile_cnt{0};
+#endif // iPSX2_ENABLE_TEMP_DIAG
 
 // [R59] fast dispatcher からの直近の dispatch PC を追跡
 // @@LAST_DISPATCH_PC@@ Removal condition: 0x22000000 ジャンプ元after identified
@@ -986,7 +1010,9 @@ static constexpr int SYSCALL_RING_SIZE = 32;
 
 extern "C" uint64_t recDispatchResolve(u32 pc)
 {
+#if iPSX2_ENABLE_TEMP_DIAG
 	s_dispatchResolve_cnt.fetch_add(1, std::memory_order_relaxed);
+#endif // iPSX2_ENABLE_TEMP_DIAG
 
 	// [R59] @@PC_HISTORY@@ ring buffer — dump last 16 dispatches when unmapped PC hit
 	// Removal condition: 0x22000000 ジャンプ元after identified
@@ -1423,6 +1449,7 @@ static void _DynGen_Dispatchers()
 
 	recBlocks.SetJITCompile(JITCompile);
 
+#if iPSX2_ENABLE_TEMP_DIAG
 	// [TEMP_DIAG] JIT arena先頭クラッシュ(host_pc=jbase+0x50)がどのdispatcher stub内かを
 	// pcsx2_log.txt だけで特定するため、dispatcher系エントリポイントを1回だけ出力する。
 	// Removal condition: crash host_pc と DispatcherReg/EnterRecompiledCode の相対位置が確定した時点。
@@ -1440,6 +1467,7 @@ static void _DynGen_Dispatchers()
 		Console.WriteLn("[TEMP_DIAG] @@DISPATCH_PTRS@@ base=%p DispatcherEvent=%p DispatcherReg=%p JITCompile=%p EnterRecompiledCode=%p",
 			SysMemory::GetEERec(), DispatcherEvent, DispatcherReg, JITCompile, EnterRecompiledCode);
 	}
+#endif // iPSX2_ENABLE_TEMP_DIAG
 
 	Perf::any.Register(start, static_cast<u32>(armGetCurrentCodePointer() - start), "EE Dispatcher");
 }
@@ -1580,7 +1608,9 @@ static void recResetRaw()
 
 	memset(manual_page, 0, sizeof(manual_page));
 	memset(manual_counter, 0, sizeof(manual_counter));
+#if iPSX2_ENABLE_TEMP_DIAG
 	s_ever_compiled_vpcs.clear(); // [TEMP_DIAG] reset persistent set on full cache reset
+#endif // iPSX2_ENABLE_TEMP_DIAG
 }
 
 void recShutdown()
@@ -1652,6 +1682,7 @@ static void recCancelInstruction()
 	pxFailRel("recCancelInstruction() called, this should never happen!");
 }
 
+#if iPSX2_ENABLE_TEMP_DIAG
 // [TEMP_DIAG] @@EE_WATCHDOG@@ background thread to sample EE PC every 3 seconds
 #include <thread>
 #include <atomic>
@@ -1766,6 +1797,7 @@ static void eeWatchdogThread()
 		n++;
 	}
 }
+#endif // iPSX2_ENABLE_TEMP_DIAG
 
 static void recExecute()
 {
@@ -1776,12 +1808,14 @@ static void recExecute()
         LogUnified("@@EXEC_START@@ R5900 Execution Started\n");
     }
 
+#if iPSX2_ENABLE_TEMP_DIAG
 	// [TEMP_DIAG] Save EE thread's mach port for watchdog PC sampling
 	s_ee_thread_port = mach_thread_self();
 	// [TEMP_DIAG] Launch watchdog thread once
 	if (!s_watchdog_running.exchange(true)) {
 		std::thread(eeWatchdogThread).detach();
 	}
+#endif // iPSX2_ENABLE_TEMP_DIAG
 
 	// Reset before we try to execute any code, if there's one pending.
 	// We need to do this here, because if we reset while we're executing, it sets the "needs reset"
@@ -1938,6 +1972,7 @@ void sif690c_runtime_log()
 			cpuRegs.pc);
 }
 
+#if iPSX2_ENABLE_TEMP_DIAG
 // [iter682] TEMP_DIAG: capture register state at soft-float normalization loop entry
 // Removal condition: OSDSYS stuck causeafter identified
 void softfloat_loop_probe()
@@ -1960,7 +1995,9 @@ void softfloat_loop_probe()
 			cpuRegs.GPR.r[29].UL[0]  // sp
 		);
 }
+#endif // iPSX2_ENABLE_TEMP_DIAG
 
+#if iPSX2_ENABLE_TEMP_DIAG
 // [TEMP_DIAG] @@JIT_PERF_COUNTERS@@ — report and reset counters (called from Counters.cpp)
 namespace R5900 { namespace Dynarec { namespace OpcodeImpl { namespace COP1 {
 	uint32_t recMTC1_GetAndResetCount();
@@ -2080,9 +2117,11 @@ void recReportPerfCounters(int vsync)
 	}
 #endif
 }
+#endif // iPSX2_ENABLE_TEMP_DIAG
 
 void recClear(u32 addr, u32 size)
 {
+#if iPSX2_ENABLE_TEMP_DIAG
 	s_recClear_total_count.fetch_add(1, std::memory_order_relaxed); // [TEMP_DIAG]
 	// [TEMP_DIAG] @@RECCLEAR_BUCKET@@ — categorize recClear calls by size for JIT_PERF reporting
 	{
@@ -2105,7 +2144,9 @@ void recClear(u32 addr, u32 size)
 		else
 			s_recClear_szother.fetch_add(1, std::memory_order_relaxed);
 	}
+#endif // iPSX2_ENABLE_TEMP_DIAG
 
+#if iPSX2_ENABLE_TEMP_DIAG
 	// [iter681] @@RECCLEAR_DIAG@@ — log large clears to verify FlushCache effectiveness
 	const bool is_large_clear = (size >= 0x100000u);
 	if (is_large_clear) {
@@ -2114,6 +2155,7 @@ void recClear(u32 addr, u32 size)
 			Console.WriteLn("@@RECCLEAR_DIAG@@ n=%d addr=%08x size=%u maxrecmem=%08x recLUT[0]=%lx",
 				s_rc_n++, addr, size, maxrecmem, (unsigned long)recLUT[addr >> 16]);
 	}
+#endif // iPSX2_ENABLE_TEMP_DIAG
 
 	if ((addr) >= maxrecmem || !(recLUT[(addr) >> 16] + (addr & ~0xFFFFUL)))
 		return;
@@ -2199,8 +2241,10 @@ void recClear(u32 addr, u32 size)
 	if (upperextent > lowerextent)
 		ClearRecLUT(PC_GETBLOCK(lowerextent), upperextent - lowerextent);
 
+#if iPSX2_ENABLE_TEMP_DIAG
 	if (cleared_count > 0)
 		s_recClear_total_blocks.fetch_add(cleared_count, std::memory_order_relaxed); // [TEMP_DIAG]
+#endif // iPSX2_ENABLE_TEMP_DIAG
 }
 
 
@@ -3535,6 +3579,7 @@ void recompileNextInstruction(bool delayslot, bool swapped_delay_slot)
 	else
 	{
 		//If the COP0 DIE bit is disabled, cycles should be doubled.
+#if iPSX2_ENABLE_TEMP_DIAG
 		// [TEMP_DIAG] @@DIE_BIT_CHECK@@ — log DIE bit at compile time for OSDSYS blocks
 		// Removal condition: DIE bit 仮説検証後
 		{
@@ -3547,6 +3592,7 @@ void recompileNextInstruction(bool delayslot, bool swapped_delay_slot)
 				s_die_log_cnt++;
 			}
 		}
+#endif // iPSX2_ENABLE_TEMP_DIAG
 		s_nBlockCycles += opcode.cycles * (2 - ((cpuRegs.CP0.n.Config >> 18) & 0x1));
 		if (opcode.recompile) {
 			opcode.recompile();
@@ -4073,7 +4119,9 @@ static void recRecompile(const u32 startpc)
         s_100000_n++;
     }
 
+#if iPSX2_ENABLE_TEMP_DIAG
     s_recompile_cnt.fetch_add(1, std::memory_order_relaxed);
+#endif // iPSX2_ENABLE_TEMP_DIAG
     static int s_recomp_diag_enabled = -1;
     if (s_recomp_diag_enabled == -1)
     {
@@ -4163,6 +4211,7 @@ static void recRecompile(const u32 startpc)
 		}
 	}
 
+#if iPSX2_ENABLE_TEMP_DIAG
 	// [P12 TEMP_DIAG] @@EE_EXCVEC_CHECK@@ – EE 例外ベクター (0x80000080/180/200) compile verify
 	// Removal condition: EE RAM 到達経路 (例外 vs 直接ジャンプ) after determined
 	{
@@ -4177,6 +4226,7 @@ static void recRecompile(const u32 startpc)
 			s_excvec_n++;
 		}
 	}
+#endif // iPSX2_ENABLE_TEMP_DIAG
 
 	// [iter681] @@SIF_FUNC_COMPILE@@ — sceSifSetDma implementation blocks (0x80006400-0x80006A00)
 	{
@@ -4203,6 +4253,7 @@ static void recRecompile(const u32 startpc)
 		}
 	}
 
+#if iPSX2_ENABLE_TEMP_DIAG
 	// [P12 TEMP_DIAG] @@BIOS_JR_T0_CHECK@@ – 0x9FC008E4 LUI/ORI/JR t0 直前の t0 値verify
 	// Removal condition: JIT で 0x801A4530 が最初の EE RAM になるcauseafter determined
 	{
@@ -4219,7 +4270,9 @@ static void recRecompile(const u32 startpc)
 				cpuRegs.GPR.r[29].UL[0]); // sp
 		}
 	}
+#endif // iPSX2_ENABLE_TEMP_DIAG
 
+#if iPSX2_ENABLE_TEMP_DIAG
 	// [P12 TEMP_DIAG] @@BIOS_EPILOG_CHECK@@ – 9FC42170 (9FC41268 epilog) compile verify
 	// Removal condition: JIT が EE RAM に飛ぶ経路の root cause after determined
 	{
@@ -4238,6 +4291,7 @@ static void recRecompile(const u32 startpc)
 			s_epilog_n++;
 		}
 	}
+#endif // iPSX2_ENABLE_TEMP_DIAG
 
 	// [iter654] @@EELOAD_COMPILE@@ — JIT が 0x82000-0x91190 をcompileしようとした時、
 	// address pattern をdetectしたら EELOAD を BIOS ROM から再コピーして正しいコードでcompileさせる。
@@ -4451,6 +4505,7 @@ static void recRecompile(const u32 startpc)
 	// [iter238d] @@HLE_VEC_A0@@ BIOS function table 0xA0 HLE
 	// LOGO が JALR 0xA0 (t1=func#) で BIOS functionを呼ぶ。カーネルが 0xA0 未設置のため
 	// C++ で t1 ベースのdispatchを行い、適切な返り値で $ra へ戻す。
+#if iPSX2_ENABLE_TEMP_DIAG
 	// [R56] TEMP_DIAG: 0x80000360 付近(KERNSTUB return先)のコードダンプ
 	// Removal condition: 0x22000000 hangcauseafter identified
 	if (startpc == 0x80000360u || startpc == 0x80000340u || startpc == 0x80000380u) {
@@ -4476,6 +4531,7 @@ static void recRecompile(const u32 startpc)
 					p[0],p[1],p[2],p[3],p[4],p[5],p[6],p[7]);
 		}
 	}
+#endif // iPSX2_ENABLE_TEMP_DIAG
 
 	// Removal condition: カーネルが自然に 0xA0 を設置するようになった後
 	if (startpc == 0x000000A0u || startpc == 0x000000B0u) {
@@ -5154,6 +5210,7 @@ static void recRecompile(const u32 startpc)
 		}
 	}
 
+#if iPSX2_ENABLE_TEMP_DIAG
 	// [TEMP_DIAG] @@JIT_13AA8_COMPILE@@ — J 0x80013aa8 の内容verify (正常脱出パス候補)
 	// 目的: 0x80006e70/6e7c の J 0x80013aa8 が ERET 系カーネル出口かどうかをverify
 	// Removal condition: 0x80001578 loopの脱出メカニズムafter determined
@@ -5170,6 +5227,7 @@ static void recRecompile(const u32 startpc)
 					0x13a80 + j*4, c[j], c[j+1], c[j+2], c[j+3]);
 		}
 	}
+#endif // iPSX2_ENABLE_TEMP_DIAG
 
 	// [iter_5388_JIT] @@JIT_5388_DUMP@@ – 0x80005380-0x800053f0 コードダンプ (自己ポインタ書き込み先call元の実態verify)
 	// 目的: JIT が 0x80005388 をcompileした時点の EE RAM 内容を取得し、BIOS 自己書き換えパッチの有無をverify
@@ -5459,6 +5517,7 @@ static void recRecompile(const u32 startpc)
                         }
                     }
                 }
+#if iPSX2_ENABLE_TEMP_DIAG
                 // [iter338] TEMP_DIAG: redirect_pc も OOB なら cycle-freeze loopが確定する。
                 // 最大3回だけログして freeze 地点を特定する。
                 // Removal condition: OOB freeze startpc after identified
@@ -5478,6 +5537,7 @@ static void recRecompile(const u32 startpc)
                         }
                     }
                 }
+#endif // iPSX2_ENABLE_TEMP_DIAG
                 // [iter311] 0x90000000 range (EE OS サービス) に対して v0=1 (success) を返す。
                 // v0=0 の場合 BIOS が同じfunctionを再度呼ぶリトライloopに入るためallsuccess扱い。
                 // Removal condition: EE OS サービス (SIF/IOP) が正しくbehaviorするようになった時
@@ -5517,6 +5577,7 @@ static void recRecompile(const u32 startpc)
     */
 
     // Re-ensure RSTATEs are pointing to the right places
+#if iPSX2_ENABLE_TEMP_DIAG
     // [TEMP_DIAG] @@PREAMBLE_ADDR@@ verify address before embedding
     {
         static bool s_preamble_addr_logged = false;
@@ -5528,6 +5589,7 @@ static void recRecompile(const u32 startpc)
                 startpc);
         }
     }
+#endif // iPSX2_ENABLE_TEMP_DIAG
     armMoveAddressToReg(RSTATE_x29, &recLUT);
     armMoveAddressToReg(RSTATE_PSX, &psxRegs);
     armMoveAddressToReg(RSTATE_CPU, &g_cpuRegistersPack);
@@ -5611,6 +5673,7 @@ static void recRecompile(const u32 startpc)
             return;
     }
 
+#if iPSX2_ENABLE_TEMP_DIAG
 	// @@BIOS_9FC432E8_INSN@@ iter13: one-shot dump of first 8 instructions at crash block
 	if (startpc == 0x9FC432E8u)
 	{
@@ -5626,7 +5689,9 @@ static void recRecompile(const u32 startpc)
 				memRead32(startpc + 0x18), memRead32(startpc + 0x1C));
 		}
 	}
+#endif // iPSX2_ENABLE_TEMP_DIAG
 
+#if iPSX2_ENABLE_TEMP_DIAG
 	// @@BIOS_43120_INSN@@ iter08: one-shot dump of 12 instructions at 9FC43120 polling loop
 	if (startpc == 0x9FC43120u)
 	{
@@ -5644,7 +5709,9 @@ static void recRecompile(const u32 startpc)
 				memRead32(startpc + 0x28), memRead32(startpc + 0x2C));
 		}
 	}
+#endif // iPSX2_ENABLE_TEMP_DIAG
 
+#if iPSX2_ENABLE_TEMP_DIAG
 	// @@BIOS_432C0_INSN@@ iter09: one-shot dump of 16 instructions at 9FC432C0 (calling loop)
 	if (startpc == 0x9FC432C0u)
 	{
@@ -5664,7 +5731,9 @@ static void recRecompile(const u32 startpc)
 				memRead32(startpc + 0x38), memRead32(startpc + 0x3C));
 		}
 	}
+#endif // iPSX2_ENABLE_TEMP_DIAG
 
+#if iPSX2_ENABLE_TEMP_DIAG
 	// @@BIOS_4115C_INSN@@ iter12: one-shot dump of 24 instructions starting at 9FC4115C
 	// Covers 9FC4115C (JAL block) AND 9FC41164 onwards (post-return code)
 	// Replaces @@BIOS_41164_INSN@@ which never fired (9FC41164 not compiled as separate block)
@@ -5713,7 +5782,9 @@ static void recRecompile(const u32 startpc)
 				memRead32(0x9FC41264), memRead32(0x9FC41268));
 		}
 	}
+#endif // iPSX2_ENABLE_TEMP_DIAG
 
+#if iPSX2_ENABLE_TEMP_DIAG
 	// @@BIOS_43150_INSN@@ iter13: one-shot dump of 24 instructions at 9FC43150
 	// 9FC43150 is called from 9FC4115C (JAL) with $ra=9FC41164 but never returns there.
 	// Dumping to find internal loop structure.
@@ -5771,7 +5842,9 @@ static void recRecompile(const u32 startpc)
 				memRead32(0x9FC43EF0), memRead32(0x9FC43EF4));
 		}
 	}
+#endif // iPSX2_ENABLE_TEMP_DIAG
 
+#if iPSX2_ENABLE_TEMP_DIAG
 	// @@BIOS_43460_INSN@@ iter20: one-shot dump of 24 instructions at 9FC43460
 	// Called from 9FC43150 F-path (JAL 9FC43460 at 9FC43220) with $a0=0x9FC43EF0
 	// Also called from 9FC411D0 (failure path of 9FC41268) with $a0=0x9FC43E70
@@ -5800,7 +5873,9 @@ static void recRecompile(const u32 startpc)
 				memRead32(0x9FC434B8), memRead32(0x9FC434BC));
 		}
 	}
+#endif // iPSX2_ENABLE_TEMP_DIAG
 
+#if iPSX2_ENABLE_TEMP_DIAG
 	// @@BIOS_43120_INSN@@ iter21: one-shot dump of 48 instructions at 9FC43120
 	// 目的: JAL 9FC43120 の内部で EE PC が 9FC432C0/9FC432DC で循環するcauseを解析
 	if (startpc == 0x9FC43120u)
@@ -5845,7 +5920,9 @@ static void recRecompile(const u32 startpc)
 				memRead32(0x9FC43318), memRead32(0x9FC4331C));
 		}
 	}
+#endif // iPSX2_ENABLE_TEMP_DIAG
 
+#if iPSX2_ENABLE_TEMP_DIAG
 	// @@BIOS_433F0_INSN@@ iter22: one-shot dump of 32 instructions at 9FC433F0
 	// 目的: EE PC が 9FC433F0 で停滞するcauseを解析
 	if (startpc == 0x9FC433F0u)
@@ -5876,6 +5953,7 @@ static void recRecompile(const u32 startpc)
 				memRead32(0x9FC43468), memRead32(0x9FC4346C));
 		}
 	}
+#endif // iPSX2_ENABLE_TEMP_DIAG
 
 	// @@COMPILE_BAD_PC@@ one-shot: dump memory at suspect PC
 	if (HWADDR(startpc) >= 0x01F00000u && HWADDR(startpc) <= 0x02100000u)
@@ -5971,6 +6049,7 @@ static void recRecompile(const u32 startpc)
     }
 #endif // [iter224] BIOS_INTERP_STUB disabled
 
+#if iPSX2_ENABLE_TEMP_DIAG
 	// [TEMP_DIAG] @@FPU_DIAG@@ JIT FPU flow trace for blocks 0x219760-0x2197c4
 	// All blocks in range get FPU dump at entry, all run via JIT (no interpreter fallback)
 	// Removal condition: JIT FPU bug in blocks 0x219760/0x2197c4 identified and fixed
@@ -5985,6 +6064,7 @@ static void recRecompile(const u32 startpc)
 			// Fall through to normal JIT compilation for ALL blocks
 		}
 	}
+#endif // iPSX2_ENABLE_TEMP_DIAG
 
 		if (HWADDR(startpc) == EELOAD_START)
 	{
@@ -6360,6 +6440,7 @@ StartRecomp:
              log_lim++;
         }
     }
+#if iPSX2_ENABLE_TEMP_DIAG
     // [TEMP_DIAG] Dump MIPS opcodes for crash block 9fc42550 to identify PC=0/RA=0 cause.
     // Removal condition: @@MIPS42550@@ ログから命令列が確定し、root causeが特定された時点。
     if (startpc == 0x9fc42550) {
@@ -6368,6 +6449,7 @@ StartRecomp:
             if (_pm) Console.WriteLn("[TEMP_DIAG] @@MIPS42550@@ pc=%08x op=%08x", _dp, *_pm);
         }
     }
+#endif // iPSX2_ENABLE_TEMP_DIAG
 
 	// The idea here is that as long as a loop doesn't write to a register it's already read
 	// (excepting registers initialised with constants or memory loads) or use any instructions
@@ -6553,6 +6635,7 @@ StartRecomp:
 		// Finally: Generate x86 recompiled code!
 		g_pCurInstInfo = s_pInstCache;
 
+#if iPSX2_ENABLE_TEMP_DIAG
 		// [TEMP_DIAG][REMOVE_AFTER=LF_ENTRY_CAPTURE_V2] One-shot runtime capture at LoadFile prologue block entry.
 		// Capture the actual a0/ra seen by JIT when block 0xBFC02640 executes.
 			if (startpc == 0xBFC02640)
@@ -6613,9 +6696,11 @@ StartRecomp:
 		extern void sif6810_runtime_log();
 		armEmitCall((void*)sif6810_runtime_log);
 	}
+#endif // iPSX2_ENABLE_TEMP_DIAG
 
 	while (!g_branch && pc < s_nEndBlock)
 	{
+#if iPSX2_ENABLE_TEMP_DIAG
         // [TEMP_DIAG][REMOVE_AFTER=LF_PRECALL_CAPTURE_V1] One-shot capture at LoadFile callsite JAL (0xBFC023D0).
         if (pc == 0xBFC023D0)
         {
@@ -6679,6 +6764,7 @@ StartRecomp:
 
             armBind(&skip_lf_precall_cap);
         }
+#endif // iPSX2_ENABLE_TEMP_DIAG
 
         // [iPSX2] Old probe removed
         g_current_diag_pc = pc;
@@ -6715,6 +6801,7 @@ StartRecomp:
 
 				recompileNextInstruction(false, false);
 
+#if iPSX2_ENABLE_TEMP_DIAG
 				// [TEMP_DIAG] @@FPU_STEP@@ Per-instruction FPU dump for block 0x219760
 				// pc-4 = just-compiled instruction. Dump after each key FPU op:
 				// 0x219770: MUL f0,f2,f0  0x219774: SUB f0,f20,f0
@@ -6738,10 +6825,12 @@ StartRecomp:
 						}
 					}
 				}
+#endif // iPSX2_ENABLE_TEMP_DIAG
 			}
 #else
 			recompileNextInstruction(false, false); // For the love of recursion, batman!
 
+#if iPSX2_ENABLE_TEMP_DIAG
 			// [TEMP_DIAG] @@FPU_STEP@@ Per-instruction FPU dump for block 0x219760
 			// pc-4 = just-compiled instruction. Dump after each key FPU op.
 			// Removal condition: JIT FPU bug identified
@@ -6761,6 +6850,7 @@ StartRecomp:
 					}
 				}
 			}
+#endif // iPSX2_ENABLE_TEMP_DIAG
 #endif
 		}
 	}
@@ -6783,11 +6873,13 @@ StartRecomp:
 
 			if (memcmp(&recRAMCopy[oldBlock->startpc], PSM(oldBlock->startpc), oldBlock->size << 2)) // [FIX] removed >>2 index compression to prevent overlap corruption
 			{
+	#if iPSX2_ENABLE_TEMP_DIAG
 				s_overlap_clear_count.fetch_add(1, std::memory_order_relaxed); // [TEMP_DIAG]
 				{
 					uint32_t pg = oldBlock->startpc >> 12;
 					if (pg < 2048) s_overlap_page_hist[pg]++;
 				}
+#endif // iPSX2_ENABLE_TEMP_DIAG
 				recClear(startpc, (pc - startpc) >> 2); // (pc - startpc) / 4
 				s_pCurBlockEx = recBlocks.Get(HWADDR(startpc));
 				pxAssert(s_pCurBlockEx->startpc == HWADDR(startpc));
@@ -6820,6 +6912,7 @@ StartRecomp:
                 is_guest_pc ? " BAD!" : "");
         }
 
+#if iPSX2_ENABLE_TEMP_DIAG
         // [TEMP_DIAG] guest 0x00036000生成時に block先頭とJIT arena先頭を1回だけ記録し、
         // host_pc=jbase+0x50 の SIGSEGV がどの命令列由来かを log だけで特定する。
         // Removal condition: @@JIT_BLOCK36000@@ / @@JIT_ARENA_HEAD@@ でcause命令列が確定した時点。
@@ -6847,6 +6940,7 @@ StartRecomp:
                 arena_words40[5], arena_words40[6], arena_words40[7], arena_words40[8], arena_words40[9], arena_words40[10],
                 arena_words40[11], arena_words40[12], arena_words40[13], arena_words40[14], arena_words40[15]);
         }
+#endif // iPSX2_ENABLE_TEMP_DIAG
     }
 #endif
 
@@ -6911,6 +7005,7 @@ StartRecomp:
 
 	s_pCurBlockEx->x86size = static_cast<u32>(armGetCurrentCodePointer() - recPtr);
 
+#if iPSX2_ENABLE_TEMP_DIAG
 	// [TEMP_DIAG] @@NATIVE_272C@@ dump complete ARM64 native code for stuck blocks
 	if (HWADDR(startpc) == 0x272c08u || HWADDR(startpc) == 0x272c50u) {
 		const u32* ncode = reinterpret_cast<const u32*>(s_pCurBlockEx->fnptr);
@@ -6927,6 +7022,7 @@ StartRecomp:
 			}
 		}
 	}
+#endif // iPSX2_ENABLE_TEMP_DIAG
 
 #if 0
 	// Example: Dump both x86/EE code
@@ -6936,6 +7032,7 @@ StartRecomp:
 #endif
 	Perf::ee.RegisterPC((void*)s_pCurBlockEx->fnptr, s_pCurBlockEx->x86size, s_pCurBlockEx->startpc);
 
+#if iPSX2_ENABLE_TEMP_DIAG
 	// [TEMP_DIAG] @@COMPILE_CONTENT@@ — record per-block stats
 	{
 		const u32 hw_pc = HWADDR(startpc);
@@ -6947,6 +7044,7 @@ StartRecomp:
 		if (!s_ever_compiled_vpcs.insert(startpc).second)
 			s_recompile_of_known++;
 	}
+#endif // iPSX2_ENABLE_TEMP_DIAG
 
 //	recPtr = xGetPtr();
     recPtr = armEndBlock();
