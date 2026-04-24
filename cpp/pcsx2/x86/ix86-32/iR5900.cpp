@@ -2215,12 +2215,14 @@ void recClear(u32 addr, u32 size)
 		recBlocks.Remove((blockidx + 1), toRemoveLast);
 	}
 
+#if iPSX2_ENABLE_TEMP_DIAG
 	if (is_large_clear) {
 		static int s_clear_log_n = 0;
 		if (s_clear_log_n < 10)
 			Console.WriteLn("@@RECCLEAR_DIAG@@ cleared %d blocks, range=[%08x,%08x)", cleared_count, lowerextent, upperextent);
 		s_clear_log_n++;
 	}
+#endif // iPSX2_ENABLE_TEMP_DIAG
 
 	upperextent = std::min(upperextent, ceiling);
 
@@ -3789,7 +3791,9 @@ static void PreBlockCheck(u32 blockpc)
 //  less likely, self-modifying code)
 void dyna_block_discard(u32 start, u32 sz)
 {
+#if iPSX2_ENABLE_TEMP_DIAG
 	s_dyna_block_discard_count.fetch_add(1, std::memory_order_relaxed);
+#endif
 #ifdef PCSX2_DEVBUILD
 	eeRecPerfLog.Write(Color_StrongGray, "Clearing Manual Block @ 0x%08X  [size=%d]", start, sz * 4);
 #endif
@@ -3801,7 +3805,9 @@ void dyna_block_discard(u32 start, u32 sz)
 // and the block is re-assigned for write protection.
 void dyna_page_reset(u32 start, u32 sz)
 {
+#if iPSX2_ENABLE_TEMP_DIAG
 	s_dyna_page_reset_count.fetch_add(1, std::memory_order_relaxed);
+#endif
 	recClear(start & ~0xfffUL, 0x400);
 	manual_counter[start >> 12]++;
 	mmap_MarkCountedRamPage(start);
@@ -5566,7 +5572,9 @@ static void recRecompile(const u32 startpc)
 
     armSetAsmPtr(recPtr, _256kb, nullptr);
     recPtr = armStartBlock();
+#if iPSX2_ENABLE_TEMP_DIAG
     s_jit_compile_count.fetch_add(1, std::memory_order_relaxed);
+#endif
 
     // [iPSX2] Flight Recorder: Log Block Entry - REMOVED (Verified OK)
     /*
