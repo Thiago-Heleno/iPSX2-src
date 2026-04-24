@@ -101,7 +101,8 @@ static std::atomic<bool> s_requestVMStop{false};    // signal VM to stop from UI
 static std::atomic<bool> s_requestVMBoot{false};    // signal VM thread to boot
 static std::mutex s_vmMutex;
 static std::condition_variable s_vmCV;
-static bool s_vmThreadCreated = false;              // guarded by s_vmMutex
+static std::atomic<bool> s_vmThreadCreated{false};
+static std::atomic<bool> s_requestAppExit{false};
 
 extern "C" bool VMController_IsStopRequested() {
     return s_requestVMStop.load();
@@ -145,27 +146,26 @@ extern "C" bool VMController_IsStopRequested() {
 }
 
 - (void)startVMThread {
-    {
-        std::lock_guard<std::mutex> lk(s_vmMutex);
-        if (s_vmThreadActive.load()) {
-            Console.WriteLn("[VM] startVMThread: VM already active, ignoring");
-            return;
-        }
+    std::unique_lock<std::mutex> lk(s_vmMutex);
 
-        // Signal the persistent thread to boot
-        s_requestVMBoot.store(true);
-        s_requestVMStop.store(false);
-
-        if (s_vmThreadCreated) {
-            Console.WriteLn("[VM] startVMThread: signaling existing VM thread");
-            s_vmCV.notify_one();
-            return;
-        }
-
-        // First call: create the persistent thread
-        s_vmThreadCreated = true;
+    if (s_vmThreadActive.load()) {
+        Console.WriteLn("[VM] startVMThread: VM already active, ignoring");
+        return;
     }
 
+    s_requestVMBoot.store(true);
+    s_requestVMStop.store(false);
+
+    if (s_vmThreadCreated.exchange(true)) {
+        // Thread already exists — wake it
+        Console.WriteLn("[VM] startVMThread: signaling existing VM thread");
+        lk.unlock();
+        s_vmCV.notify_one();
+        return;
+    }
+
+    // First call: create thread while still holding the lock so the new
+    // thread blocks on s_vmCV.wait() before we release.
     Console.WriteLn("[VM] Creating persistent VM thread...");
 
     std::thread vmThread([]() {
@@ -173,8 +173,7 @@ extern "C" bool VMController_IsStopRequested() {
         Console.WriteLn("[VM] VM Thread: CPUThreadInitialize (once)...");
         if (!VMManager::Internal::CPUThreadInitialize()) {
             Console.Error("VM Thread: CPUThreadInitialize failed.");
-            std::lock_guard<std::mutex> lk(s_vmMutex);
-            s_vmThreadCreated = false;
+            s_vmThreadCreated.store(false);
             return;
         }
 
@@ -186,6 +185,7 @@ extern "C" bool VMController_IsStopRequested() {
         bool auto_boot_first = (getenv("iPSX2_AUTO_BOOT") && atoi(getenv("iPSX2_AUTO_BOOT")) == 1)
                             || (getenv("iPSX2_BOOT_ELF") != nullptr);
         while (true) {
+            if (s_requestAppExit.load()) break;
             // Wait for boot signal (or auto-boot on first iteration)
             {
                 std::unique_lock<std::mutex> lk(s_vmMutex);
@@ -308,8 +308,8 @@ extern "C" bool VMController_IsStopRequested() {
             });
         } // end while(true) boot loop
 
-        // Note: CPUThreadShutdown() is never reached because the thread persists.
-        // It would only be needed if we added an app-termination signal.
+        VMManager::Internal::CPUThreadShutdown();
+        Console.WriteLn("[VM] VM Thread: CPUThreadShutdown called, thread exiting.");
     });
     vmThread.detach();
 }
@@ -1410,6 +1410,14 @@ INISettingsInterface* g_p44_settings_interface = nullptr;
 }
 
 - (void)application:(UIApplication *)application didDiscardSceneSessions:(NSSet<UISceneSession *> *)sceneSessions {
+}
+
+- (void)applicationWillTerminate:(UIApplication *)application {
+    Console.WriteLn("[App] applicationWillTerminate: signaling VM thread to exit");
+    s_requestVMStop.store(true);
+    s_requestAppExit.store(true);
+    s_vmCV.notify_all();
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
 }
 
 @end
