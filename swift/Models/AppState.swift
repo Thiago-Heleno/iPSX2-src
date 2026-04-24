@@ -88,4 +88,13 @@ final class AppState: @unchecked Sendable {
         }
         iPSX2Bridge.requestVMShutdown()
     }
+
+    deinit {
+        if let obs = shutdownObserver {
+            NotificationCenter.default.removeObserver(obs)
+        }
+        if let obs = autoBootObserver {
+            NotificationCenter.default.removeObserver(obs)
+        }
+    }
 }

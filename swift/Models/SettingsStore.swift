@@ -26,7 +26,7 @@ final class SettingsStore: @unchecked Sendable {
 
     // ── Emulator / CPU ──
     var eeCoreType: Int {
-        didSet { iPSX2Bridge.setINIInt("EmuCore/CPU", key: "CoreType", value: Int32(eeCoreType)) }
+        didSet { iPSX2Bridge.setINIInt("EmuCore/CPU", key: "CoreType", value: Int32(clamping:eeCoreType)) }
     }
     var iopRecompiler: Bool {
         didSet { iPSX2Bridge.setINIBool("EmuCore/CPU/Recompiler", key: "EnableIOP", value: iopRecompiler) }
@@ -51,7 +51,7 @@ final class SettingsStore: @unchecked Sendable {
 
     // ── Advanced Speedhacks ──
     var eeCycleRate: Int {
-        didSet { iPSX2Bridge.setINIInt("EmuCore/Speedhacks", key: "EECycleRate", value: Int32(eeCycleRate)) }
+        didSet { iPSX2Bridge.setINIInt("EmuCore/Speedhacks", key: "EECycleRate", value: Int32(clamping:eeCycleRate)) }
     }
     var vu1Instant: Bool {
         didSet { iPSX2Bridge.setINIBool("EmuCore/Speedhacks", key: "vu1Instant", value: vu1Instant) }
@@ -65,43 +65,43 @@ final class SettingsStore: @unchecked Sendable {
 
     // ── Graphics ──
     var renderer: Int {
-        didSet { iPSX2Bridge.setINIInt("EmuCore/GS", key: "Renderer", value: Int32(renderer)) }
+        didSet { iPSX2Bridge.setINIInt("EmuCore/GS", key: "Renderer", value: Int32(clamping:renderer)) }
     }
     var upscaleMultiplier: Float {
         didSet { iPSX2Bridge.setINIFloat("EmuCore/GS", key: "upscale_multiplier", value: upscaleMultiplier) }
     }
     var vsyncQueueSize: Int {
-        didSet { iPSX2Bridge.setINIInt("EmuCore/GS", key: "VsyncQueueSize", value: Int32(vsyncQueueSize)) }
+        didSet { iPSX2Bridge.setINIInt("EmuCore/GS", key: "VsyncQueueSize", value: Int32(clamping:vsyncQueueSize)) }
     }
     var textureFiltering: Int {
-        didSet { iPSX2Bridge.setINIInt("EmuCore/GS", key: "filter", value: Int32(textureFiltering)) }
+        didSet { iPSX2Bridge.setINIInt("EmuCore/GS", key: "filter", value: Int32(clamping:textureFiltering)) }
     }
     var fxaa: Bool {
         didSet { iPSX2Bridge.setINIBool("EmuCore/GS", key: "fxaa", value: fxaa) }
     }
     var casMode: Int {
-        didSet { iPSX2Bridge.setINIInt("EmuCore/GS", key: "CASMode", value: Int32(casMode)) }
+        didSet { iPSX2Bridge.setINIInt("EmuCore/GS", key: "CASMode", value: Int32(clamping:casMode)) }
     }
     var casSharpness: Int {
-        didSet { iPSX2Bridge.setINIInt("EmuCore/GS", key: "CASSharpness", value: Int32(casSharpness)) }
+        didSet { iPSX2Bridge.setINIInt("EmuCore/GS", key: "CASSharpness", value: Int32(clamping:casSharpness)) }
     }
     var interlaceMode: Int {
-        didSet { iPSX2Bridge.setINIInt("EmuCore/GS", key: "deinterlace_mode", value: Int32(interlaceMode)) }
+        didSet { iPSX2Bridge.setINIInt("EmuCore/GS", key: "deinterlace_mode", value: Int32(clamping:interlaceMode)) }
     }
     var aspectRatio: Int {
-        didSet { iPSX2Bridge.setINIInt("EmuCore/GS", key: "AspectRatio", value: Int32(aspectRatio)) }
+        didSet { iPSX2Bridge.setINIInt("EmuCore/GS", key: "AspectRatio", value: Int32(clamping:aspectRatio)) }
     }
     var blendingAccuracy: Int {
-        didSet { iPSX2Bridge.setINIInt("EmuCore/GS", key: "accurate_blending_unit", value: Int32(blendingAccuracy)) }
+        didSet { iPSX2Bridge.setINIInt("EmuCore/GS", key: "accurate_blending_unit", value: Int32(clamping:blendingAccuracy)) }
     }
     var dithering: Int {
-        didSet { iPSX2Bridge.setINIInt("EmuCore/GS", key: "dithering_ps2", value: Int32(dithering)) }
+        didSet { iPSX2Bridge.setINIInt("EmuCore/GS", key: "dithering_ps2", value: Int32(clamping:dithering)) }
     }
 
     // ── OSD Overlay ──
     var osdPreset: OsdPreset {
         didSet {
-            iPSX2Bridge.setINIInt("iPSX2/UI", key: "OsdPreset", value: Int32(osdPreset.rawValue))
+            iPSX2Bridge.setINIInt("iPSX2/UI", key: "OsdPreset", value: Int32(clamping:osdPreset.rawValue))
             applyOsdPreset(osdPreset)
         }
     }
@@ -170,7 +170,7 @@ final class SettingsStore: @unchecked Sendable {
         // [P60] Force MTVU off (known buggy)
         iPSX2Bridge.setINIBool("EmuCore/Speedhacks", key: "vuThread", value: false)
         // Apply OSD preset
-        iPSX2Bridge.applyOsdPreset(Int32(osdPreset.rawValue))
+        iPSX2Bridge.applyOsdPreset(Int32(clamping:osdPreset.rawValue))
     }
 
     /// Reload ALL settings from INI (call on VM start/stop)
@@ -209,7 +209,7 @@ final class SettingsStore: @unchecked Sendable {
 
     /// Apply OSD preset — writes ALL OSD flags to INI + GSConfig
     private func applyOsdPreset(_ preset: OsdPreset) {
-        iPSX2Bridge.applyOsdPreset(Int32(preset.rawValue))
+        iPSX2Bridge.applyOsdPreset(Int32(clamping:preset.rawValue))
         let isSimple = preset == .simple
         let isDetail = preset == .detail
         let isFull = preset == .full
