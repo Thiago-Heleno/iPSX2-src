@@ -400,6 +400,7 @@ void LogToScreen(const char* str) {
 namespace Host
 {
     SDL_Window* g_sdl_window = nullptr;
+    static SDL_Gamepad* s_gamepad = nullptr;
 
     void RequestShutdown() {
         SDL_Event event;
@@ -595,7 +596,6 @@ namespace Host
 
         // MFi / External gamepad support via SDL3
         {
-            static SDL_Gamepad* s_gamepad = nullptr;
             // Auto-detect: open first available gamepad if not already open
             if (!s_gamepad) {
                 int count = 0;
@@ -695,6 +695,12 @@ namespace Host::Internal
 extern "C" void iPSX2_SetSDLFullscreen(bool enabled) {
     if (Host::g_sdl_window)
         SDL_SetWindowFullscreen(Host::g_sdl_window, enabled);
+}
+
+// Returns the gamepad handle opened by PumpMessagesOnCPUThread (or nullptr if none).
+// Bridge uses this for capture-mode polling to avoid a duplicate open.
+extern "C" SDL_Gamepad* iPSX2_GetActiveGamepad() {
+    return Host::s_gamepad;
 }
 
 namespace Common {

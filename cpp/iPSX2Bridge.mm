@@ -417,20 +417,10 @@ static NSDate* s_lastNVMSaveDate = nil;
 + (void)pollGamepadForCapture {
     if (!GamepadMapper::captureMode.load()) return;
     SDL_UpdateGamepads();
-    // Keep gamepad open across polls to avoid open/close overhead
-    static SDL_Gamepad* s_settingsGP = nullptr;
-    if (!s_settingsGP) {
-        int count = 0;
-        SDL_JoystickID* ids = SDL_GetGamepads(&count);
-        if (ids && count > 0) s_settingsGP = SDL_OpenGamepad(ids[0]);
-        SDL_free(ids);
-    }
-    if (!s_settingsGP) return;
-    if (!SDL_GamepadConnected(s_settingsGP)) {
-        SDL_CloseGamepad(s_settingsGP);
-        s_settingsGP = nullptr;
-        return;
-    }
+    // Reuse the handle opened by PumpMessagesOnCPUThread to avoid a duplicate open.
+    extern "C" SDL_Gamepad* iPSX2_GetActiveGamepad();
+    SDL_Gamepad* s_settingsGP = iPSX2_GetActiveGamepad();
+    if (!s_settingsGP || !SDL_GamepadConnected(s_settingsGP)) return;
     // SDL_PumpEvents required for GCController input to be processed
     SDL_PumpEvents();
     SDL_UpdateGamepads();
