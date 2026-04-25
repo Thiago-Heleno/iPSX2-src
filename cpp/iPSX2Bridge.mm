@@ -7,6 +7,7 @@
 #include <SDL3/SDL.h>
 
 extern "C" void iPSX2_SetSDLFullscreen(bool enabled);
+extern "C" SDL_Gamepad* iPSX2_GetActiveGamepad();
 #include "Common.h"
 #include "CDVD/CDVD.h"
 #include "VMManager.h"
@@ -418,7 +419,6 @@ static NSDate* s_lastNVMSaveDate = nil;
     if (!GamepadMapper::captureMode.load()) return;
     SDL_UpdateGamepads();
     // Reuse the handle opened by PumpMessagesOnCPUThread to avoid a duplicate open.
-    extern "C" SDL_Gamepad* iPSX2_GetActiveGamepad();
     SDL_Gamepad* s_settingsGP = iPSX2_GetActiveGamepad();
     if (!s_settingsGP || !SDL_GamepadConnected(s_settingsGP)) return;
     // SDL_PumpEvents required for GCController input to be processed
