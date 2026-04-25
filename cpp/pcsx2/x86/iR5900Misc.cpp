@@ -1,6 +1,10 @@
 // SPDX-FileCopyrightText: 2002-2025 PCSX2 Dev Team
 // SPDX-License-Identifier: GPL-3.0+
 
+#ifndef iPSX2_ENABLE_TEMP_DIAG
+#define iPSX2_ENABLE_TEMP_DIAG 0
+#endif
+
 #include "Common.h"
 #include "iR5900.h"
 #include "R5900OpcodeTables.h"
@@ -8,8 +12,10 @@
 
 // [iter681] recClear is defined in iR5900.cpp (global scope, outside namespace)
 extern void recClear(u32 addr, u32 size);
+#if iPSX2_ENABLE_TEMP_DIAG
 // [TEMP_DIAG] JIT perf counter
 extern std::atomic<uint32_t> s_jit_cache_clear_count;
+#endif
 
 #if !defined(__ANDROID__)
 using namespace x86Emitter;
@@ -236,7 +242,9 @@ void recCOP1_Unknown()
 // Clears any compiled JIT block at the given address.
 static void recCACHE_ClearBlock(u32 addr)
 {
-	s_jit_cache_clear_count.fetch_add(1, std::memory_order_relaxed); // [TEMP_DIAG]
+#if iPSX2_ENABLE_TEMP_DIAG
+	s_jit_cache_clear_count.fetch_add(1, std::memory_order_relaxed);
+#endif
 	u32 phys = addr & 0x1FFFFFFFu;
 	// Only clear blocks in EE RAM range (0-32MB)
 	if (phys < Ps2MemSize::MainRam) {

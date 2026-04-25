@@ -1,6 +1,10 @@
 // SPDX-FileCopyrightText: 2002-2025 PCSX2 Dev Team
 // SPDX-License-Identifier: GPL-3.0+
 
+#ifndef iPSX2_ENABLE_TEMP_DIAG
+#define iPSX2_ENABLE_TEMP_DIAG 0
+#endif
+
 #include <atomic>
 #include <time.h>
 #include <cmath>
@@ -1571,12 +1575,13 @@ static __fi void GSVSync()
         }
     }
 
+#if iPSX2_ENABLE_TEMP_DIAG
     // [TEMP_DIAG] @@JIT_PERF@@ — report JIT performance counters every 30 vsyncs
-    // Removal condition: JIT performance issue resolved
     if (Cpu != &intCpu && (gsvsync_count % 30) == 0) {
         extern void recReportPerfCounters(int vsync);
         recReportPerfCounters(gsvsync_count);
     }
+#endif // iPSX2_ENABLE_TEMP_DIAG
 
     // [iter666] @@EELOAD_LOOP_CODE@@ EELOAD ポーリングloop + SIF init code ダンプ
     // Removal condition: EELOAD SIF bind issue解決後
